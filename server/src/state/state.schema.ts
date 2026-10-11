@@ -18,6 +18,7 @@ export type AppState = {
     createdAt?: string;
     schedule?: number[];
     archived?: boolean;
+    pauseRanges?: Array<{ from: string; to: string }>;
   }>;
   oneOffTasks: Array<{
     id: string;
@@ -62,6 +63,7 @@ export const LIMITS = {
   tasks: 1000,
   historyPerTask: 4000,
   scheduleDays: 7,
+  pauseRangesPerTask: 200,
   oneOffTasks: 2000,
   goals: 500,
   goalLog: 20000,
@@ -146,6 +148,34 @@ function readSchedule(value: unknown, where: string): number[] | undefined {
   return days.length ? days : undefined;
 }
 
+function readPauseRanges(value: unknown, where: string): Array<{ from: string; to: string }> {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) fail(`${where}: паузы должны быть списком`);
+  if (value.length > LIMITS.pauseRangesPerTask) {
+    fail(`${where}: слишком много периодов паузы (максимум ${LIMITS.pauseRangesPerTask})`);
+  }
+  const ranges: Array<{ from: string; to: string }> = [];
+  for (const [index, item] of value.entries()) {
+    const itemWhere = `${where}, пауза №${index + 1}`;
+    if (!isPlainObject(item)) fail(`${itemWhere}: ожидается объект`);
+    const { from, to } = item;
+    if (typeof from !== 'string' || !DATE_RE.test(from) || typeof to !== 'string' || !DATE_RE.test(to)) {
+      fail(`${itemWhere}: нужны даты ГГГГ-ММ-ДД (от и до)`);
+    }
+    if (from > to) fail(`${itemWhere}: начало позже конца`);
+    ranges.push({ from, to });
+  }
+  // Сортировка и схлопывание пересечений — как при добавлении на клиенте.
+  ranges.sort((a, b) => a.from.localeCompare(b.from));
+  const merged: Array<{ from: string; to: string }> = [];
+  for (const range of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && range.from <= last.to) last.to = range.to > last.to ? range.to : last.to;
+    else merged.push({ ...range });
+  }
+  return merged;
+}
+
 function sanitizeHabit(input: unknown, index: number): AppState['tasks'][number] {
   const where = `Привычка №${index + 1}`;
   if (!isPlainObject(input)) fail(`${where}: ожидается объект`);
@@ -157,6 +187,7 @@ function sanitizeHabit(input: unknown, index: number): AppState['tasks'][number]
     createdAt: readOptionalString(input.createdAt, LIMITS.timestamp),
     schedule,
     archived: Boolean(input.archived),
+    pauseRanges: readPauseRanges(input.pauseRanges, where),
   };
 }
 

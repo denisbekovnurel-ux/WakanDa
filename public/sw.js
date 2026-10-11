@@ -2,7 +2,7 @@
 // при билде): старый кэш удаляется при activate, иначе клиенты получали бы смесь версий.
 const BUILD_ID = '__BUILD_ID__';
 const CACHE_NAME = `wakanda-shell-${BUILD_ID}`;
-const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon.svg'];
+const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-maskable-512.png', '/apple-touch-icon.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
@@ -48,9 +48,31 @@ self.addEventListener('fetch', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const target = event.notification.data?.url || '/#daily';
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
     const client = clients.find((entry) => 'focus' in entry);
-    return client ? client.navigate('/#daily').then(() => client.focus()) : self.clients.openWindow('/#daily');
+    return client ? client.navigate(target).then(() => client.focus()) : self.clients.openWindow(target);
+  }));
+});
+
+// Web Push: уведомление приходит с сервера, даже когда вкладка (и приложение)
+// закрыты. Payload — JSON { title, body, url }.
+self.addEventListener('push', (event) => {
+  let payload = { title: 'WakanDa', body: 'Пора свериться с планом.', url: '/#daily' };
+  try {
+    if (event.data) payload = { ...payload, ...event.data.json() };
+  } catch {
+    try {
+      if (event.data) payload.body = event.data.text();
+    } catch {
+      // тело уведомления могло быть без данных
+    }
+  }
+  event.waitUntil(self.registration.showNotification(payload.title || 'WakanDa', {
+    body: payload.body || '',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    data: { url: payload.url || '/#daily' },
   }));
 });
 
@@ -60,6 +82,8 @@ self.addEventListener('periodicsync', (event) => {
   if (event.tag !== 'wakanda-daily-reminder') return;
   event.waitUntil(self.registration.showNotification('WakanDa — время свериться', {
     body: 'Загляни в приложение и отметь выполненные привычки за сегодня.',
-    icon: '/icons/icon.svg',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    data: { url: '/#daily' },
   }));
 });

@@ -43,6 +43,34 @@ function reducer(state, action) {
         }),
       };
     }
+    case 'habit/pause': {
+      const { id, from, to } = action;
+      if (typeof from !== 'string' || typeof to !== 'string' || from > to) return state;
+      return {
+        ...state,
+        tasks: state.tasks.map((task) => {
+          if (task.id !== id) return task;
+          const ranges = [...(task.pauseRanges || []).map((range) => ({ ...range })), { from, to }].sort((a, b) => a.from.localeCompare(b.from));
+          // Схлопываем пересекающиеся периоды в непересекающиеся.
+          const merged = [];
+          for (const range of ranges) {
+            const last = merged[merged.length - 1];
+            if (last && range.from <= last.to) last.to = range.to > last.to ? range.to : last.to;
+            else merged.push(range);
+          }
+          return { ...task, pauseRanges: merged };
+        }),
+      };
+    }
+    case 'habit/unpause': {
+      const { id, dateKey } = action;
+      return {
+        ...state,
+        tasks: state.tasks.map((task) => (task.id === id
+          ? { ...task, pauseRanges: (task.pauseRanges || []).filter((range) => !(dateKey >= range.from && dateKey <= range.to)) }
+          : task)),
+      };
+    }
     case 'oneoff/add':
       return { ...state, oneOffTasks: [...state.oneOffTasks, { id: crypto.randomUUID(), title: action.title, done: false, createdAt: action.todayKey, deadline: action.deadline, priority: action.priority }] };
     case 'oneoff/toggle':
@@ -112,6 +140,8 @@ function useActions(dispatch) {
     deleteHabit: (id) => dispatch({ type: 'habit/delete', id }),
     moveHabit: (from, to) => dispatch({ type: 'habit/move', from, to }),
     changeHabitSchedule: (id, day) => dispatch({ type: 'habit/schedule', id, day }),
+    pauseHabit: (id, from, to) => dispatch({ type: 'habit/pause', id, from, to }),
+    unpauseHabit: (id, dateKey) => dispatch({ type: 'habit/unpause', id, dateKey }),
     addOneOff: (title, options, todayKey) => dispatch({ type: 'oneoff/add', title, deadline: options.deadline, priority: options.priority, todayKey }),
     toggleOneOff: (id) => dispatch({ type: 'oneoff/toggle', id }),
     deleteOneOff: (id) => dispatch({ type: 'oneoff/delete', id }),

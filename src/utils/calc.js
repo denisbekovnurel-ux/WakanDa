@@ -59,19 +59,36 @@ export function markFailedStatus() {
 }
 
 /**
+ * Привычка на паузе в дату dateKey ('YYYY-MM-DD')?
+ * pauseRanges: Array<{ from: string, to: string }> — границы включительно.
+ */
+export function isPaused(task, dateKey) {
+  const ranges = Array.isArray(task?.pauseRanges) ? task.pauseRanges : [];
+  return ranges.some((range) => {
+    if (!range || typeof range.from !== 'string' || typeof range.to !== 'string') return false;
+    return dateKey >= range.from && dateKey <= range.to;
+  });
+}
+
+/**
  * Текущий стрик подряд идущих "done", считая от сегодня назад.
  * history: { 'YYYY-MM-DD': 'done' | 'failed' | 'empty' }
+ * pauseRanges: дни паузы считаются нейтральными — стрик не сгорает.
  */
-export function getStreak(history, schedule = [0, 1, 2, 3, 4, 5, 6], referenceDate = new Date()) {
+export function getStreak(history, schedule = [0, 1, 2, 3, 4, 5, 6], referenceDate = new Date(), pauseRanges = []) {
   if (!schedule.length) return 0;
   const day = new Date(referenceDate);
   day.setHours(0, 0, 0, 0);
-  if (schedule.includes(day.getDay()) && history[toDateKey(day)] === STATUS.FAILED) return 0;
-  if (schedule.includes(day.getDay()) && history[toDateKey(day)] !== STATUS.DONE) day.setDate(day.getDate() - 1);
+  const paused = (dateKey) => isPaused({ pauseRanges }, dateKey);
+  const todayKey = toDateKey(day);
+  if (schedule.includes(day.getDay()) && !paused(todayKey)) {
+    if (history[todayKey] === STATUS.FAILED) return 0;
+    if (history[todayKey] !== STATUS.DONE) day.setDate(day.getDate() - 1);
+  }
   let streak = 0;
 
   while (true) {
-    if (!schedule.includes(day.getDay())) {
+    if (!schedule.includes(day.getDay()) || paused(toDateKey(day))) {
       day.setDate(day.getDate() - 1);
       continue;
     }
@@ -87,7 +104,7 @@ export function getStreak(history, schedule = [0, 1, 2, 3, 4, 5, 6], referenceDa
   return streak;
 }
 
-export function getBestStreak(history, schedule = [0, 1, 2, 3, 4, 5, 6]) {
+export function getBestStreak(history, schedule = [0, 1, 2, 3, 4, 5, 6], pauseRanges = []) {
   const dates = Object.keys(history || {})
     .filter((date) => history[date] === STATUS.DONE && schedule.includes(new Date(`${date}T12:00:00`).getDay()))
     .sort();
@@ -103,7 +120,7 @@ export function getBestStreak(history, schedule = [0, 1, 2, 3, 4, 5, 6]) {
       const cursor = new Date(previousDate);
       cursor.setDate(cursor.getDate() + 1);
       while (cursor < date) {
-        if (schedule.includes(cursor.getDay())) scheduledGap++;
+        if (schedule.includes(cursor.getDay()) && !isPaused({ pauseRanges }, toDateKey(cursor))) scheduledGap++;
         cursor.setDate(cursor.getDate() + 1);
       }
     }
@@ -119,6 +136,7 @@ export function getBestStreak(history, schedule = [0, 1, 2, 3, 4, 5, 6]) {
 export function getHabitStats(task, referenceDate = new Date()) {
   const history = task.history || {};
   const schedule = task.schedule || [0, 1, 2, 3, 4, 5, 6];
+  const pauseRanges = task.pauseRanges || [];
   const year = referenceDate.getFullYear();
   const month = referenceDate.getMonth();
   const monthStart = new Date(year, month, 1);
@@ -130,14 +148,14 @@ export function getHabitStats(task, referenceDate = new Date()) {
   let monthDone = 0;
 
   for (const day = new Date(start); day <= today && day <= monthEnd; day.setDate(day.getDate() + 1)) {
-    if (!schedule.includes(day.getDay())) continue;
+    if (!schedule.includes(day.getDay()) || isPaused(task, toDateKey(day))) continue;
     monthExpected++;
     if (history[toDateKey(day)] === STATUS.DONE) monthDone++;
   }
 
   const weekdays = Array.from({ length: 7 }, (_, index) => ({ day: index, done: 0, expected: 0 }));
   for (const day = new Date(created); day <= today; day.setDate(day.getDate() + 1)) {
-    if (!schedule.includes(day.getDay())) continue;
+    if (!schedule.includes(day.getDay()) || isPaused(task, toDateKey(day))) continue;
     const weekday = weekdays[day.getDay()];
     weekday.expected++;
     if (history[toDateKey(day)] === STATUS.DONE) weekday.done++;
@@ -150,7 +168,7 @@ export function getHabitStats(task, referenceDate = new Date()) {
   }, null);
 
   return {
-    bestStreak: getBestStreak(history, schedule),
+    bestStreak: getBestStreak(history, schedule, pauseRanges),
     monthPercent: monthExpected ? Math.round((monthDone / monthExpected) * 100) : 0,
     monthDone,
     monthExpected,

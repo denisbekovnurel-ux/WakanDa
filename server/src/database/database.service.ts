@@ -116,6 +116,23 @@ export class DatabaseService implements OnModuleDestroy {
         data TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        endpoint TEXT NOT NULL UNIQUE,
+        p256dh TEXT NOT NULL,
+        auth TEXT NOT NULL,
+        timezone_offset INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id);
+      CREATE TABLE IF NOT EXISTS push_log (
+        user_id TEXT NOT NULL,
+        date_key TEXT NOT NULL,
+        sent_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, date_key)
+      );
       CREATE TABLE IF NOT EXISTS user_state_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT NOT NULL,

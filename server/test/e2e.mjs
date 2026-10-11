@@ -106,7 +106,7 @@ async function main() {
 
   const validState = {
     version: 2,
-    tasks: [{ id: 'h1', title: 'Бег', history: { '2026-10-01': 'done' } }],
+    tasks: [{ id: 'h1', title: 'Бег', history: { '2026-10-01': 'done' }, pauseRanges: [{ from: '2026-10-10', to: '2026-10-12' }] }],
     oneOffTasks: [{ id: 'o1', title: 'Позвонить', done: false, priority: 'high', deadline: '2026-10-30' }],
     goals: [{ id: 'g1', title: 'Книги', unit: 'шт', target: 12, dailyRate: 1, current: 3, log: [{ date: '2026-10-01', amount: 2 }] }],
     notes: { '2026-10-01': 'заметка' },
@@ -126,6 +126,9 @@ async function main() {
 
   const invalidDate = await req('/state', { method: 'PUT', token: userToken, body: { ...validState, tasks: [{ title: 'x', history: { notadate: 'done' } }] } });
   check('reject invalid history date (400)', invalidDate.status === 400);
+
+  const invalidPause = await req('/state', { method: 'PUT', token: userToken, body: { ...validState, tasks: [{ title: 'x', pauseRanges: [{ from: '2026-10-10', to: '2026-10-01' }] }] } });
+  check('reject invalid pause range (400)', invalidPause.status === 400, String(invalidPause.status));
 
   const bigTasks = [];
   for (let i = 0; i < 1000; i += 1) {
@@ -161,6 +164,45 @@ async function main() {
 
   const after = await req('/state', { token: userToken });
   check('state still readable after restore', after.data?.state?.tasks?.length >= 1);
+  const restoredPause = after.data?.state?.tasks?.find((task) => task.id === 'h1')?.pauseRanges;
+  check('pause ranges survive snapshot restore', Array.isArray(restoredPause) && restoredPause.length === 1, JSON.stringify(restoredPause));
+
+  const badChange = await req('/auth/password', { method: 'POST', token: userToken, body: { currentPassword: 'wrongpass', newPassword: 'newsecret456' } });
+  check('change password rejects wrong current', badChange.status === 400, `${badChange.status} ${JSON.stringify(badChange.data)}`);
+
+  const change = await req('/auth/password', { method: 'POST', token: userToken, body: { currentPassword: 'secret123', newPassword: 'newsecret456' } });
+  check('change password', change.status === 200 || change.status === 201, JSON.stringify(change.data));
+
+  const loginNew = await req('/auth/login', { method: 'POST', body: { username, password: 'newsecret456' } });
+  check('login with new password', loginNew.status === 200 || loginNew.status === 201, `${loginNew.status}`);
+
+  const everywhere = await req('/auth/logout-everywhere', { method: 'POST', token: userToken });
+  check('logout everywhere', everywhere.status === 200 || everywhere.status === 201, JSON.stringify(everywhere.data));
+
+  const adminReset = await req(`/admin/users/${userId}/password`, { method: 'POST', token: adminToken, body: { password: 'resetpass789' } });
+  check('admin reset password', adminReset.status === 200 || adminReset.status === 201, JSON.stringify(adminReset.data));
+
+  const loginAfterReset = await req('/auth/login', { method: 'POST', body: { username, password: 'resetpass789' } });
+  check('login with admin-reset password', loginAfterReset.status === 200 || loginAfterReset.status === 201, `${loginAfterReset.status}`);
+  const userToken2 = loginAfterReset.data?.token;
+
+  const pushKey = await req('/push/key');
+  check('push public key available', typeof pushKey.data?.publicKey === 'string' && pushKey.data.publicKey.length > 10, JSON.stringify(pushKey.data));
+
+  const badSub = await req('/push/subscribe', { method: 'POST', token: userToken2, body: { subscription: { endpoint: 'not-a-url' } } });
+  check('reject invalid push subscription (400)', badSub.status === 400, String(badSub.status));
+
+  const sub = await req('/push/subscribe', { method: 'POST', token: userToken2, body: { subscription: { endpoint: 'https://127.0.0.1:1/push', keys: { p256dh: 'BExampleKeyExampleKeyExampleKeyExampleKeyExampleKeyExampleKey', auth: 'authsecret' } }, timezoneOffset: 180 } });
+  check('push subscribe', sub.status === 200 || sub.status === 201, JSON.stringify(sub.data));
+
+  const pushStatus = await req('/push/status', { token: userToken2 });
+  check('push status counts subscription', pushStatus.data?.subscriptions === 1, JSON.stringify(pushStatus.data));
+
+  const pushTest = await req('/push/test', { method: 'POST', token: userToken2 });
+  check('push test attempts delivery', (pushTest.status === 200 || pushTest.status === 201) && typeof pushTest.data?.sent === 'number', JSON.stringify(pushTest.data));
+
+  const unsub = await req('/push/unsubscribe', { method: 'POST', token: userToken2, body: { endpoint: 'https://127.0.0.1:1/push' } });
+  check('push unsubscribe', unsub.status === 200 || unsub.status === 201, JSON.stringify(unsub.data));
 
   const foreign = await req(`/state/history/${newest?.id}`, { token: adminToken });
   check('foreign snapshot not readable (404)', foreign.status === 404, String(foreign.status));

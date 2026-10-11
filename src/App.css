@@ -284,3 +284,22 @@ button:focus-visible,input:focus-visible,a:focus-visible { outline: 2px solid #d
 .theme-light .sync-version-hint { color:#817587; }
 .theme-light .sync-version-list li { color:#57606a; }
 
+/* Пауза привычки: день нейтрален для стрика и недоступен для отметок. */
+.month-day-cell--paused { background:#241f2b; color:#7d7484; cursor:default; }
+.month-day-cell--paused:hover { border-color:transparent; }
+.theme-light .month-day-cell--paused { background:#efeaf1; color:#9a91a3; }
+.legend-dot--paused { background:#4a4254; }
+.pause-badge { margin-left: 8px; padding: 2px 7px; border-radius: 999px; background: #2c2433; color: #a99fb2; font-size: .6rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; vertical-align: 2px; }
+.pause-editor { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding: 9px 11px; border: 1px solid #342d3b; border-radius: 8px; background: #17131a; }
+.pause-editor label { display: inline-flex; align-items: center; gap: 5px; color: #9c94a0; font-size: .68rem; }
+.pause-editor input[type="date"] { padding: 5px 7px; border: 1px solid #3a3241; border-radius: 6px; background: #0c0a0f; color: #f0eaf3; font-size: .68rem; }
+.pause-editor .button { padding: 6px 10px; font-size: .68rem; }
+.pause-list { display: flex; flex-direction: column; gap: 4px; width: 100%; margin-top: 6px; padding: 0; list-style: none; }
+.pause-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 6px; background: #221c29; color: #c9c0d1; font-size: .68rem; }
+.pause-list .text-button { font-size: .66rem; }
+.pause-hint { width: 100%; margin: 0; color: #82788c; font-size: .62rem; }
+.theme-light .pause-editor { border-color: #e5dce8; background: #faf7fb; }
+.theme-light .pause-editor input[type="date"] { border-color: #e0d6e4; background: #fff; color: #3a2f3f; }
+.theme-light .pause-list li { background: #f1ebf3; color: #4a3d4f; }
+.theme-light .pause-badge { background: #e9e1ed; color: #7a6d81; }
+

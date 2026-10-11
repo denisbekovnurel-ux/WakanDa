@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { getStreak, toDateKey, STATUS } from '../utils/calc';
+import { getStreak, isPaused, toDateKey, STATUS } from '../utils/calc';
 import { useAppStore } from '../store/AppStore';
 
 const weekdayFormatter = new Intl.DateTimeFormat('ru-RU', { weekday: 'short' });
@@ -78,33 +78,35 @@ export function MonthGrid({ tasks }) {
                   const dateKey = toDateKey(day);
                   const status = task.history?.[dateKey] || STATUS.EMPTY;
                   const scheduled = (task.schedule || [0, 1, 2, 3, 4, 5, 6]).includes(day.getDay());
-                  const statusLabel = !scheduled ? 'выходной по расписанию' : status === STATUS.DONE ? 'выполнено' : status === STATUS.FAILED ? 'пропуск' : 'не отмечено';
-                  return <button type="button" key={dateKey} disabled={!scheduled}
-                    className={`month-day-cell month-day-cell--${status} ${dateKey === todayKey ? 'is-today' : ''} ${!scheduled ? 'is-rest' : ''}`}
+                  const paused = !scheduled ? false : isPaused(task, dateKey);
+                  const interactive = scheduled && !paused;
+                  const statusLabel = !scheduled ? 'выходной по расписанию' : paused ? 'пауза' : status === STATUS.DONE ? 'выполнено' : status === STATUS.FAILED ? 'пропуск' : 'не отмечено';
+                  return <button type="button" key={dateKey} disabled={!interactive}
+                    className={`month-day-cell month-day-cell--${paused ? 'paused' : status} ${dateKey === todayKey ? 'is-today' : ''} ${!scheduled ? 'is-rest' : ''}`}
                     onClick={() => handleCellClick(task, dateKey, status)}
                     onKeyDown={(event) => {
                       // Пропуск доступен и с клавиатуры, а не только долгим нажатием/правым кликом.
-                      if (scheduled && ['Delete', 'Backspace', 'f', 'F', 'к', 'К'].includes(event.key)) {
+                      if (interactive && ['Delete', 'Backspace', 'f', 'F', 'к', 'К'].includes(event.key)) {
                         event.preventDefault();
                         markFailed(task, dateKey);
                       }
                     }}
-                    onContextMenu={(event) => { event.preventDefault(); if (scheduled) markFailed(task, dateKey); }}
+                    onContextMenu={(event) => { event.preventDefault(); if (interactive) markFailed(task, dateKey); }}
                     onPointerDown={() => startPress(task, dateKey)}
                     onPointerUp={endPress}
                     onPointerLeave={endPress}
                     onPointerCancel={endPress}
-                    aria-label={`${task.title}, ${dateKey}: ${statusLabel}${scheduled ? '. Клик — выполнено/снять, Delete — пропуск, удержание или правый клик — пропуск' : ''}`}
-                    title={`${dateKey} — ${statusLabel}`}><span>{!scheduled ? '—' : status === STATUS.DONE ? '✓' : status === STATUS.FAILED ? '×' : ''}</span></button>;
+                    aria-label={`${task.title}, ${dateKey}: ${statusLabel}${interactive ? '. Клик — выполнено/снять, Delete — пропуск, удержание или правый клик — пропуск' : ''}`}
+                    title={`${dateKey} — ${statusLabel}`}><span>{!scheduled ? '—' : paused ? '‖' : status === STATUS.DONE ? '✓' : status === STATUS.FAILED ? '×' : ''}</span></button>;
                 })}
-                <span className="month-streak-label month-streak-value">{getStreak(task.history || {}, task.schedule || [0, 1, 2, 3, 4, 5, 6])}<small>дн.</small></span>
+                <span className="month-streak-label month-streak-value">{getStreak(task.history || {}, task.schedule || [0, 1, 2, 3, 4, 5, 6], new Date(), task.pauseRanges || [])}<small>дн.</small></span>
                 <button className="delete-btn month-delete" type="button" onClick={() => actions.archiveHabit(task.id)} aria-label={`Переместить привычку ${task.title} в архив`} title="В архив">↧</button>
               </div>
             ))}
           </div>
         </div>
       )}
-      <div className="month-legend" aria-label="Условные обозначения"><span><i className="legend-dot legend-dot--done" /> выполнено</span><span><i className="legend-dot legend-dot--failed" /> пропуск</span><span><i className="legend-dot" /> не отмечено</span><span className="month-scroll-hint">Удержание, правый клик или Delete — отметить пропуск</span></div>
+      <div className="month-legend" aria-label="Условные обозначения"><span><i className="legend-dot legend-dot--done" /> выполнено</span><span><i className="legend-dot legend-dot--failed" /> пропуск</span><span><i className="legend-dot legend-dot--paused" /> пауза</span><span><i className="legend-dot" /> не отмечено</span><span className="month-scroll-hint">Удержание, правый клик или Delete — отметить пропуск</span></div>
     </section>
   );
 }

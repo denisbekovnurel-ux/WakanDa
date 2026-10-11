@@ -35,6 +35,9 @@ type UserRow = {
 
 // Сессия живёт 30 дней без входа.
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+// Активной сессии продлеваем срок, когда до конца осталось меньше недели
+// (скользящая сессия: не заставляем заходить заново, пока пользуешься).
+const SLIDING_THRESHOLD_MS = 1000 * 60 * 60 * 24 * 7;
 // Человек считается «в сети», если он был активен последние 2 минуты.
 const ONLINE_WINDOW_MS = 1000 * 120;
 const USERNAME_RE = /^[\p{L}\p{N}_.-]{3,24}$/u;
@@ -56,6 +59,8 @@ export class AuthService implements OnModuleInit {
   onModuleInit() {
     this.cleanExpiredSessions();
     this.ensureAdmin();
+    // Периодическая уборка истёкших сессий (не держит процесс живым).
+    setInterval(() => this.cleanExpiredSessions(), 60 * 60 * 1000).unref();
   }
 
   // ─────────────────────────── Администратор ───────────────────────────
@@ -187,16 +192,46 @@ export class AuthService implements OnModuleInit {
     return { token, user: this.toPublic(row) };
   }
 
-  private validateCredentials(username: string, password: string) {
-    if (!USERNAME_RE.test(username)) {
-      throw new BadRequestException('Логин: 3–24 символа, буквы, цифры, точка, дефис или подчёркивание');
-    }
+  private validatePassword(password: string) {
     if (password.length < 6) {
       throw new BadRequestException('Пароль должен быть не короче 6 символов');
     }
     if (password.length > 200) {
       throw new BadRequestException('Пароль слишком длинный');
     }
+  }
+
+  private validateCredentials(username: string, password: string) {
+    if (!USERNAME_RE.test(username)) {
+      throw new BadRequestException('Логин: 3–24 символа, буквы, цифры, точка, дефис или подчёркивание');
+    }
+    this.validatePassword(password);
+  }
+
+  /**
+   * Смена пароля самим пользователем. Требует текущий пароль; после смены
+   * остаются действующими только текущая сессия.
+   */
+  changePassword(userId: string, sessionToken: string, currentPasswordRaw: unknown, newPasswordRaw: unknown) {
+    const row = this.db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined;
+    if (!row) throw new UnauthorizedException('Пользователь не найден');
+    const currentPassword = String(currentPasswordRaw ?? '');
+    const newPassword = String(newPasswordRaw ?? '');
+    if (!currentPassword || !this.verifyPassword(currentPassword, row.password_hash)) {
+      throw new BadRequestException('Текущий пароль указан неверно');
+    }
+    this.validatePassword(newPassword);
+    this.db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(this.hashPassword(newPassword), userId);
+    // Все остальные сессии этого пользователя больше недействительны.
+    this.db.prepare('DELETE FROM sessions WHERE user_id = ? AND token <> ?').run(userId, sessionToken);
+    return { ok: true };
+  }
+
+  logoutEverywhere(userId: string, exceptToken?: string) {
+    const removed = exceptToken
+      ? this.db.prepare('DELETE FROM sessions WHERE user_id = ? AND token <> ?').run(userId, exceptToken)
+      : this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+    return { ok: true, sessionsRemoved: removed.changes };
   }
 
   private createUserRow(username: string, password: string, role: UserRole, status: UserStatus): UserRow {
@@ -238,9 +273,16 @@ export class AuthService implements OnModuleInit {
       .prepare('SELECT u.*, s.expires_at AS session_expires FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?')
       .get(token) as (UserRow & { session_expires: string }) | undefined;
     if (!row) return null;
-    if (new Date(row.session_expires).getTime() < Date.now()) {
+    const expiresAt = new Date(row.session_expires).getTime();
+    if (expiresAt < Date.now()) {
       this.deleteSession(token);
       return null;
+    }
+    // Скользящий срок: активная сессия продлевается по мере использования.
+    if (expiresAt - Date.now() < SLIDING_THRESHOLD_MS) {
+      this.db
+        .prepare('UPDATE sessions SET expires_at = ? WHERE token = ?')
+        .run(new Date(Date.now() + SESSION_TTL_MS).toISOString(), token);
     }
     // Заблокированного пользователя выкидываем в тот же момент.
     if (row.status === 'blocked') {
@@ -293,6 +335,19 @@ export class AuthService implements OnModuleInit {
     const row = this.requireManageableUser(id);
     const removed = this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(row.id);
     return { ok: true, sessionsRemoved: removed.changes };
+  }
+
+  /**
+   * Сброс пароля администратором: новый пароль задаётся напрямую,
+   * все сессии пользователя разрываются (вход заново).
+   */
+  resetPassword(id: string, passwordRaw: unknown) {
+    const row = this.requireManageableUser(id);
+    const password = String(passwordRaw ?? '');
+    this.validatePassword(password);
+    this.db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(this.hashPassword(password), row.id);
+    this.deleteUserSessions(row.id);
+    return { ok: true };
   }
 
   deleteUser(id: string) {

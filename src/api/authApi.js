@@ -49,6 +49,14 @@ export function apiLogout(token) {
   return request('/auth/logout', { method: 'POST', token });
 }
 
+export function apiLogoutEverywhere(token) {
+  return request('/auth/logout-everywhere', { method: 'POST', token });
+}
+
+export function apiChangePassword(token, currentPassword, newPassword) {
+  return request('/auth/password', { method: 'POST', token, body: { currentPassword, newPassword } });
+}
+
 export function apiAdminUsers(token) {
   return request('/admin/users', { token });
 }
@@ -59,6 +67,10 @@ export function apiAdminSetStatus(token, id, action) {
 
 export function apiAdminKick(token, id) {
   return request(`/admin/users/${id}/kick`, { method: 'POST', token });
+}
+
+export function apiAdminResetPassword(token, id, password) {
+  return request(`/admin/users/${id}/password`, { method: 'POST', token, body: { password } });
 }
 
 export function apiAdminDeleteUser(token, id) {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { getHabitStats } from '../utils/calc';
+import { getHabitStats, isPaused, toDateKey } from '../utils/calc';
 import { useAppStore } from '../store/AppStore';
 
 const weekdays = [
@@ -30,19 +30,47 @@ function RenameHabitControls({ task, actions }) {
   );
 }
 
+function PauseControls({ task, today, actions }) {
+  const [open, setOpen] = useState(false);
+  const [from, setFrom] = useState(toDateKey(today));
+  const [to, setTo] = useState(toDateKey(today));
+  const ranges = task.pauseRanges || [];
+
+  function submit(event) {
+    event.preventDefault();
+    if (!from || !to || from > to) return;
+    actions.pauseHabit(task.id, from, to);
+    setOpen(false);
+  }
+
+  if (!open) {
+    return <button type="button" className="text-button" onClick={() => setOpen(true)} aria-label={`Пауза для ${task.title}`}>⏸ Пауза</button>;
+  }
+  return (
+    <form className="pause-editor" onSubmit={submit}>
+      <label>с <input type="date" value={from} min="2000-01-01" onChange={(event) => setFrom(event.target.value)} /></label>
+      <label>по <input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
+      <button className="button button--light" type="submit" disabled={!from || !to || from > to}>Поставить</button>
+      {ranges.length > 0 && <ul className="pause-list">{ranges.map((range) => <li key={`${range.from}${range.to}`}>{range.from} — {range.to}<button type="button" onClick={() => actions.unpauseHabit(task.id, range.from)} aria-label={`Снять паузу с ${range.from}`}>снять</button></li>)}</ul>}
+      <p className="pause-hint">Дни паузы нейтральны: серия не сгорает, процент за месяц не снижается.</p>
+    </form>
+  );
+}
+
 function HabitRow({ task, today, position, count, actions }) {
   const stats = getHabitStats(task, today);
   const schedule = task.schedule || [0, 1, 2, 3, 4, 5, 6];
   const bestDay = stats.mostProductiveDay === null ? 'пока нет данных' : weekdayNames[stats.mostProductiveDay];
+  const pausedToday = isPaused(task, toDateKey(today));
 
   return (
     <li className={`managed-habit ${task.archived ? 'is-archived' : ''}`}>
-      <div className="managed-habit-main"><span className="managed-habit-name">{task.title}</span><div className="managed-habit-stats"><span>РЕКОРД <b>{stats.bestStreak} дн.</b></span><span>МЕСЯЦ <b>{stats.monthPercent}%</b></span><span>ЛУЧШИЙ ДЕНЬ <b>{bestDay}</b></span></div></div>
+      <div className="managed-habit-main"><span className="managed-habit-name">{task.title}{pausedToday && <span className="pause-badge">пауза</span>}</span><div className="managed-habit-stats"><span>РЕКОРД <b>{stats.bestStreak} дн.</b></span><span>МЕСЯЦ <b>{stats.monthPercent}%</b></span><span>ЛУЧШИЙ ДЕНЬ <b>{bestDay}</b></span></div></div>
       {!task.archived && <div className="schedule-pills" role="group" aria-label={`Расписание привычки ${task.title}`}>
         {weekdays.map((day) => <button key={day.value} className={schedule.includes(day.value) ? 'is-selected' : ''} type="button" onClick={() => actions.changeHabitSchedule(task.id, day.value)} aria-pressed={schedule.includes(day.value)} aria-label={`${day.label}: ${schedule.includes(day.value) ? 'по расписанию' : 'выходной'}`}>{day.label}</button>)}
       </div>}
       <div className="managed-habit-actions">
-        {!task.archived && <><button type="button" className="order-button" disabled={position === 0} onClick={() => actions.moveHabit(position, position - 1)} aria-label={`Поднять ${task.title} выше`}>↑</button><button type="button" className="order-button" disabled={position === count - 1} onClick={() => actions.moveHabit(position, position + 1)} aria-label={`Опустить ${task.title} ниже`}>↓</button><RenameHabitControls task={task} actions={actions} /><button type="button" className="text-button" onClick={() => actions.archiveHabit(task.id)}>В архив</button></>}
+        {!task.archived && <><button type="button" className="order-button" disabled={position === 0} onClick={() => actions.moveHabit(position, position - 1)} aria-label={`Поднять ${task.title} выше`}>↑</button><button type="button" className="order-button" disabled={position === count - 1} onClick={() => actions.moveHabit(position, position + 1)} aria-label={`Опустить ${task.title} ниже`}>↓</button><RenameHabitControls task={task} actions={actions} /><PauseControls task={task} today={today} actions={actions} /><button type="button" className="text-button" onClick={() => actions.archiveHabit(task.id)}>В архив</button></>}
         {task.archived && <button type="button" className="text-button" onClick={() => actions.restoreHabit(task.id)}>Вернуть</button>}
         <button type="button" className="delete-btn" onClick={() => { if (window.confirm(`Удалить «${task.title}» вместе со всей историей? Если хотите сохранить историю, используйте «В архив».`)) actions.deleteHabit(task.id); }} aria-label={`Удалить ${task.title}`}>×</button>
       </div>

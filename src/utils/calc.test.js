@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getBestStreak, getGoalProgress, getHabitStats, getStreak, toggleDoneStatus, markFailedStatus, toDateKey, STATUS } from './calc';
+import { getBestStreak, getGoalProgress, getHabitStats, getStreak, isPaused, toggleDoneStatus, markFailedStatus, toDateKey, STATUS } from './calc';
 
 function keyDaysAgo(n) {
   const date = new Date();
@@ -103,6 +103,44 @@ describe('getGoalProgress', () => {
     const goal = { target: 10, current: 10, dailyRate: 1, createdAt: keyDaysAgo(1), log: [] };
     expect(getGoalProgress(goal).isDone).toBe(true);
     expect(getGoalProgress(goal).daysLeft).toBe(0);
+  });
+});
+
+describe('пауза привычки', () => {
+  it('isPaused определяет попадание даты в период', () => {
+    const task = { pauseRanges: [{ from: keyDaysAgo(3), to: keyDaysAgo(1) }] };
+    expect(isPaused(task, keyDaysAgo(2))).toBe(true);
+    expect(isPaused(task, keyDaysAgo(1))).toBe(true);
+    expect(isPaused(task, keyDaysAgo(0))).toBe(false);
+    expect(isPaused({}, keyDaysAgo(0))).toBe(false);
+  });
+
+  it('день паузы не прерывает стрик', () => {
+    const history = { [keyDaysAgo(0)]: 'done', [keyDaysAgo(2)]: 'done', [keyDaysAgo(3)]: 'done' };
+    const pauseRanges = [{ from: keyDaysAgo(1), to: keyDaysAgo(1) }];
+    expect(getStreak(history, [0, 1, 2, 3, 4, 5, 6], new Date(), pauseRanges)).toBe(3);
+  });
+
+  it('провал в день паузы не сгорает', () => {
+    const history = { [keyDaysAgo(0)]: 'failed', [keyDaysAgo(1)]: 'done', [keyDaysAgo(2)]: 'done' };
+    const pauseRanges = [{ from: keyDaysAgo(0), to: keyDaysAgo(0) }];
+    expect(getStreak(history, [0, 1, 2, 3, 4, 5, 6], new Date(), pauseRanges)).toBe(2);
+  });
+
+  it('getBestStreak пропускает дни паузы', () => {
+    const history = { [keyDaysAgo(0)]: 'done', [keyDaysAgo(2)]: 'done' };
+    const pauseRanges = [{ from: keyDaysAgo(1), to: keyDaysAgo(1) }];
+    expect(getBestStreak(history, [0, 1, 2, 3, 4, 5, 6], pauseRanges)).toBe(2);
+  });
+
+  it('дни паузы не входят в ожидание месяца', () => {
+    const today = new Date();
+    const createdAt = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+    const history = { [keyDaysAgo(0)]: 'done' };
+    const base = getHabitStats({ history, createdAt, schedule: [today.getDay()] }, today);
+    const paused = getHabitStats({ history, createdAt, schedule: [today.getDay()], pauseRanges: [{ from: createdAt, to: keyDaysAgo(0) }] }, today);
+    expect(base.monthExpected).toBeGreaterThanOrEqual(1);
+    expect(paused.monthExpected).toBe(0);
   });
 });
 

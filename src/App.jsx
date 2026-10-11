@@ -8,6 +8,7 @@ import { HabitManager } from './components/HabitManager';
 import { BackupControls } from './components/BackupControls';
 import { StateHistory } from './components/StateHistory';
 import { SyncConflictDialog } from './components/SyncConflictDialog';
+import { PasswordChangeDialog } from './components/PasswordChangeDialog';
 import { OneOffList } from './components/OneOffList';
 import { MonthGrid } from './components/MonthGrid';
 import { GoalCard } from './components/GoalCard/GoalCard';
@@ -15,6 +16,8 @@ import { StatsPage } from './components/Stats/StatsPage';
 import { NotesPanel } from './components/NotesPanel/NotesPanel';
 import { getBadges } from './utils/badges';
 import { useAuth } from './auth/AuthContext';
+import { ensurePushSubscription, disablePushSubscription } from './utils/push';
+import { sendTestPush } from './api/pushApi';
 import { AdminPanel } from './components/Admin/AdminPanel';
 import quotes from './data/quotes.json';
 import './App.css';
@@ -37,7 +40,7 @@ function getPageFromHash() {
 
 function App() {
   const { state, actions, conflict, resolveConflict } = useAppStore();
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const isAdmin = user?.role === 'admin';
   const { tasks, oneOffTasks, goals, theme, reminderTime, reminderEnabled } = state;
   const prefersDark = usePrefersDark();
@@ -48,6 +51,7 @@ function App() {
   const themeIcons = { system: '◐', light: '☼', dark: '☾' };
   const [page, setPage] = useState(getPageFromHash);
   const [installPrompt, setInstallPrompt] = useState(null);
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [quoteIndex, setQuoteIndex] = useState(() => Math.floor(Math.random() * quotes.length));
   const [goalForm, setGoalForm] = useState({ title: '', target: '', unit: '', dailyRate: '' });
   const { today, todayKey } = useToday();
@@ -97,10 +101,31 @@ function App() {
   async function toggleReminders() {
     if (reminderEnabled) {
       actions.setReminderEnabled(false);
+      if (token) await disablePushSubscription(token);
       return;
     }
     const granted = await requestReminderPermission();
-    if (granted) actions.setReminderEnabled(true);
+    if (!granted) return;
+    actions.setReminderEnabled(true);
+    // С разрешением на уведомления оформляем и фоновый Web Push: тогда
+    // напоминание придёт, даже когда вкладка закрыта (его шлёт сервер).
+    if (token) {
+      const result = await ensurePushSubscription(token);
+      if (!result.ok && result.reason === 'unsupported') {
+        window.alert('Фоновые уведомления этот браузер не поддерживает. Пока сайт открыт, напоминание всё равно сработает.');
+      }
+    }
+  }
+
+  async function sendTestNotification() {
+    if (!token) return;
+    try {
+      const result = await sendTestPush(token);
+      if (result?.sent > 0) window.alert('Тестовое уведомление отправлено — проверь шторку.');
+      else window.alert('Подписка на уведомления не найдена. Включи напоминания и разреши уведомления в браузере.');
+    } catch (error) {
+      window.alert(error?.message || 'Не удалось отправить тестовое уведомление.');
+    }
   }
 
   async function installApp() {
@@ -121,6 +146,7 @@ function App() {
         <span className="pending-reminder" aria-live="polite">{pendingHabits ? `ОСТАЛОСЬ ОТМЕТИТЬ ${pendingHabits}` : 'ВСЁ ОТМЕЧЕНО'}</span>
         <div className="user-menu">
           <span className="user-chip" title={user?.username}>{user?.username}<span className="user-chip-role">{isAdmin ? 'ADMIN' : 'USER'}</span></span>
+          <button className="logout-button" type="button" onClick={() => setShowPasswordDialog(true)} title="Пароль и сессии">Пароль</button>
           <button className="logout-button" type="button" onClick={logout} title="Выйти из аккаунта">Выйти</button>
         </div>
         <button className="theme-toggle" type="button" onClick={() => actions.setTheme(nextTheme)} aria-label={`Тема: ${themeNames[theme]}. Переключить на «${themeNames[nextTheme]}»`} title={`Тема: ${themeNames[theme]}`}>{themeIcons[theme]}</button>
@@ -146,7 +172,7 @@ function App() {
               <section className="section-card home-preview"><div className="section-heading"><div><p className="eyebrow">ДЕНЬ ЗА ДНЁМ</p><h2>Твои привычки</h2></div><a className="text-link" href="#daily">Открыть месяц <span aria-hidden="true">↗</span></a></div><p className="section-description">{activeTasks.length ? `В списке ${activeTasks.length} ${pluralize(activeTasks.length, 'привычка', 'привычки', 'привычек')}. Продолжай держать ритм.` : 'Добавь привычку и начни собирать свою серию.'}</p><ul className="home-habit-list">{activeTasks.slice(0, 4).map((task) => <li key={task.id}><span className={`home-habit-mark ${task.history?.[todayKey] === 'done' ? 'is-done' : ''}`}>{task.history?.[todayKey] === 'done' ? '✓' : '·'}</span><span>{task.title}</span></li>)}</ul>{activeTasks.length > 4 && <a className="text-link home-more" href="#daily">И ещё {activeTasks.length - 4} привычек</a>}</section>
               <section className="section-card home-focus"><p className="eyebrow">НЕ ЖДИ ИДЕАЛЬНОГО МОМЕНТА</p><h2>Выбери дело.<br /><span>Доведи до конца.</span></h2><p className="section-description">Характер крепнет не от обещаний, а от выполненных решений.</p><a className="button button--red" href="#oneoff">К списку задач <span aria-hidden="true">→</span></a></section>
             </div>
-            <section className="section-card settings-panel"><div><p className="eyebrow">СОХРАНИ СВОЙ ПРОГРЕСС</p><h2>Инструменты и напоминания</h2><p className="section-description">Уведомление браузера приходит в выбранное время, пока сайт открыт. В установленном PWA на Android возможны фоновые напоминания через periodicSync.</p></div><div className="reminder-controls"><label>Время напоминания<input type="time" value={reminderTime} onChange={(event) => actions.setReminderTime(event.target.value)} /></label><button className="button button--red" type="button" onClick={toggleReminders}>{reminderEnabled ? 'Отключить напоминания' : 'Включить напоминание'}</button></div><BackupControls />{installPrompt && <button className="button button--light install-button" type="button" onClick={installApp}>Установить WakanDa</button>}<StateHistory /></section>
+            <section className="section-card settings-panel"><div><p className="eyebrow">СОХРАНИ СВОЙ ПРОГРЕСС</p><h2>Инструменты и напоминания</h2><p className="section-description">Напоминание приходит в выбранное время. С включёнными push-уведомлениями сервер пришлёт его, даже когда вкладка закрыта (нужно установить приложение и разрешить уведомления).</p></div><div className="reminder-controls"><label>Время напоминания<input type="time" value={reminderTime} onChange={(event) => actions.setReminderTime(event.target.value)} /></label><button className="button button--red" type="button" onClick={toggleReminders}>{reminderEnabled ? 'Отключить напоминания' : 'Включить напоминание'}</button>{reminderEnabled && <button className="button button--light" type="button" onClick={sendTestNotification}>Проверить уведомление</button>}</div><BackupControls />{installPrompt && <button className="button button--light install-button" type="button" onClick={installApp}>Установить WakanDa</button>}<StateHistory /></section>
           </>
         )}
 
@@ -164,6 +190,7 @@ function App() {
         <footer className="site-footer"><span>Выдержка создаёт результат.</span><span>WAKANDA 와칸다 <span aria-hidden="true">✳</span></span></footer>
       </main>
       {conflict && <SyncConflictDialog conflict={conflict} onChoose={resolveConflict} />}
+      {showPasswordDialog && <PasswordChangeDialog onClose={() => setShowPasswordDialog(false)} />}
     </div>
   );
 }

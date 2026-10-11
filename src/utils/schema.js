@@ -37,6 +37,25 @@ function normalizeSchedule(schedule) {
   return days.length ? [...new Set(days)] : undefined;
 }
 
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Периоды паузы привычки: [{ from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' }],
+ * границы включительно. Битые записи отбрасываются, список сортируется.
+ */
+function normalizePauseRanges(pauseRanges) {
+  if (!Array.isArray(pauseRanges)) return [];
+  const result = [];
+  for (const range of pauseRanges) {
+    if (!isPlainObject(range)) continue;
+    const { from, to } = range;
+    if (typeof from === 'string' && DATE_KEY_RE.test(from) && typeof to === 'string' && DATE_KEY_RE.test(to) && from <= to) {
+      result.push({ from, to });
+    }
+  }
+  return result.sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+}
+
 export function normalizeHabit(task) {
   if (!isPlainObject(task) || typeof task.title !== 'string' || !task.title.trim()) return null;
   return {
@@ -46,6 +65,7 @@ export function normalizeHabit(task) {
     createdAt: typeof task.createdAt === 'string' ? task.createdAt : undefined,
     schedule: normalizeSchedule(task.schedule),
     archived: Boolean(task.archived),
+    pauseRanges: normalizePauseRanges(task.pauseRanges),
   };
 }
 

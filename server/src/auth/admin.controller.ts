@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, Inject, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Param, Post, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AdminGuard, AuthGuard } from './auth.guard';
 
@@ -30,6 +30,11 @@ export class AdminController {
   @Post('users/:id/kick')
   kick(@Param('id') id: string) {
     return this.auth.kick(id);
+  }
+
+  @Post('users/:id/password')
+  resetPassword(@Param('id') id: string, @Body() body: { password?: unknown }) {
+    return this.auth.resetPassword(id, body?.password);
   }
 
   @Delete('users/:id')

@@ -3,6 +3,7 @@ import { useAuth } from '../../auth/AuthContext';
 import {
   apiAdminDeleteUser,
   apiAdminKick,
+  apiAdminResetPassword,
   apiAdminSetStatus,
   apiAdminUsers,
 } from '../../api/authApi';
@@ -71,6 +72,26 @@ export function AdminPanel() {
       await load();
     } catch (err) {
       setError(err?.message || 'Не удалось выполнить действие');
+    } finally {
+      setBusyId('');
+    }
+  }
+
+  async function resetPassword(id) {
+    const target = users.find((entry) => entry.id === id);
+    const password = window.prompt(`Новый пароль для «${target?.username ?? ''}» (от 6 символов).\nВсе сессии пользователя будут разорваны.`);
+    if (password == null) return;
+    if (password.length < 6) {
+      setError('Пароль должен быть не короче 6 символов');
+      return;
+    }
+    setBusyId(id);
+    setNotice('');
+    try {
+      await apiAdminResetPassword(token, id, password);
+      setNotice('Пароль сброшен, пользователь разлогинен');
+    } catch (err) {
+      setError(err?.message || 'Не удалось сбросить пароль');
     } finally {
       setBusyId('');
     }
@@ -168,6 +189,7 @@ export function AdminPanel() {
                           {entry.status === 'pending' && (
                             <button type="button" className="button button--light admin-btn" disabled={busyId === entry.id} onClick={() => act(entry.id, 'block')}>Отклонить</button>
                           )}
+                          <button type="button" className="button button--light admin-btn" disabled={busyId === entry.id} onClick={() => resetPassword(entry.id)} title="Задать пользователю новый пароль">Сбросить пароль</button>
                           <button type="button" className="text-button admin-delete" disabled={busyId === entry.id} onClick={() => act(entry.id, 'delete')}>Удалить</button>
                         </>
                       )}

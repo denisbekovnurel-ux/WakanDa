@@ -46,6 +46,30 @@ describe('sanitizeAppState', () => {
     expect(state.tasks[0].schedule).toEqual([1, 2]);
   });
 
+  it('нормализует периоды паузы: сортирует и схлопывает пересечения', () => {
+    const state = sanitizeAppState({
+      ...base,
+      tasks: [{
+        title: 'Бег',
+        pauseRanges: [
+          { from: '2026-10-10', to: '2026-10-12' },
+          { from: '2026-10-01', to: '2026-10-05' },
+          { from: '2026-10-04', to: '2026-10-08' },
+        ],
+      }],
+    });
+    expect(state.tasks[0].pauseRanges).toEqual([
+      { from: '2026-10-01', to: '2026-10-08' },
+      { from: '2026-10-10', to: '2026-10-12' },
+    ]);
+  });
+
+  it('отбрасывает некорректные периоды паузы', () => {
+    expect(() => sanitizeAppState({ ...base, tasks: [{ title: 'Бег', pauseRanges: [{ from: '05.10.2026', to: '2026-10-05' }] }] })).toThrow(/пауза/i);
+    expect(() => sanitizeAppState({ ...base, tasks: [{ title: 'Бег', pauseRanges: [{ from: '2026-10-05', to: '2026-10-01' }] }] })).toThrow(/позже/i);
+    expect(() => sanitizeAppState({ ...base, tasks: [{ title: 'Бег', pauseRanges: [{ from: '2026-10-05' }] }] })).toThrow(/пауза/i);
+  });
+
   it('принимает темы light/dark/system, иначе — system', () => {
     expect(sanitizeAppState({ ...base, theme: 'light' }).theme).toBe('light');
     expect(sanitizeAppState({ ...base, theme: 'dark' }).theme).toBe('dark');

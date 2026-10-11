@@ -40,4 +40,16 @@ export class AuthController {
     if (req.sessionToken) this.auth.logout(req.sessionToken);
     return { ok: true };
   }
+
+  @UseGuards(AuthGuard)
+  @Post('logout-everywhere')
+  logoutEverywhere(@Req() req: AuthedRequest) {
+    return this.auth.logoutEverywhere(req.user!.id, req.sessionToken);
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('password')
+  password(@Req() req: AuthedRequest, @Body() body: { currentPassword?: unknown; newPassword?: unknown }) {
+    return this.auth.changePassword(req.user!.id, req.sessionToken ?? '', body?.currentPassword, body?.newPassword);
+  }
 }
