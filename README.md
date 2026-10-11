@@ -124,18 +124,55 @@ Web Push требует HTTPS (или `localhost`) и разрешения на 
 - `POST /api/admin/users/:id/{approve|block|unblock|kick}`, `POST /api/admin/users/:id/password`
 - `DELETE /api/admin/users/:id`
 
-## Хостинг и GitHub
+## Деплой на один сервер (фронт + API)
 
-⚠️ **GitHub Pages подходит только для статического фронтенда** — там нельзя запустить
-сервер NestJS и базу SQLite. Возможные схемы:
+Рекомендуемый вариант: один процесс отдаёт и интерфейс, и `/api` с того же домена —
+тогда CORS не нужен, а куки/уведомления работают без ограничений.
 
-- **Проще всего:** держать весь проект на одном сервере (VPS, Render, Railway, Fly.io):
-  собрать фронт `npm run build` и запустить API — тогда фронт и `/api` на одном домене.
-- **Раздельно:** фронт на GitHub Pages, API на Render/Railway/VPS. Тогда укажите адрес API
-  и разрешите домен фронта через `WAKANDA_CORS_ORIGINS`.
+⚠️ **Вход админа.** Перед публикацией обязательно задайте свой `WAKANDA_ADMIN_PASS`
+(иначе используется пароль по умолчанию из репозитория). Логин — `WAKANDA_ADMIN_USER`
+(по умолчанию `waka_admin`).
+
+### Через Docker (проще всего)
+
+```bash
+cp .env.example .env        # задайте WAKANDA_ADMIN_PASS
+docker compose up -d --build
+```
+
+Приложение откроется на `http://<сервер>:3001`. Данные (SQLite) и ключи Web Push
+лежат в томе `wakanda-data` и сохраняются при пересборке.
+
+### Без Docker
+
+```bash
+npm install
+npm install --prefix server
+npm run build               # собирает dist/
+WAKANDA_ADMIN_PASS=... PORT=3001 npm --prefix server run start
+```
+
+Сервер сам раздаёт `dist/` (отключается через `WAKANDA_SERVE_STATIC=0`).
+
+### HTTPS и Web Push
+
+Web Push работает только по HTTPS (исключение — `localhost`). На PaaS (Render,
+Railway, Fly.io) TLS уже включён. На VPS поставьте перед приложением reverse proxy
+с HTTPS (Caddy проще всего — сам получает сертификат Let's Encrypt). Адрес контакта
+для push-сервисов задаётся через `WAKANDA_VAPID_SUBJECT`.
+
+Ключи VAPID по умолчанию генерируются при первом запуске и **остаются в базе** —
+подписки не ломаются между перезапусками. Если данных жёсткий диск эфемерный,
+задайте `WAKANDA_VAPID_PUBLIC` / `WAKANDA_VAPID_PRIVATE` явно.
+
+### Если фронт и API раздельно
+
+Возможно, но тогда фронт — это только статика: на GitHub Pages сервер NestJS и
+SQLite не запустить. Укажите адрес API во фронтенде и разрешите домен фронта через
+`WAKANDA_CORS_ORIGINS`.
 
 Данные лежат в `server/data/wakanda.db` (SQLite). На бесплатных хостингах диск может
-очищаться при пересборке — подключай постоянный диск, если данные важны.
+очищаться при пересборке — подключайте постоянный диск, если данные важны.
 
 ## Безопасность (что уже сделано)
 

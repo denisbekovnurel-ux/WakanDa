@@ -1,0 +1,32 @@
+# WakanDa на одном сервере: образ сам собирает фронтенд, а API раздаёт его
+# с того же домена (см. serveFrontend в server/src/main.ts). CORS не нужен.
+#
+# Запуск:
+#   1. Скопируйте .env.example в .env и задайте WAKANDA_ADMIN_PASS.
+#   2. docker compose up -d --build
+#   3. Откройте http://<сервер>:3001  (для Web Push нужен HTTPS — см. README).
+#
+# Данные и ключи Web Push лежат в томе wakanda-data и переживают пересборку.
+
+services:
+  wakanda:
+    build: .
+    image: wakanda:latest
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: "3001"
+      WAKANDA_DATA_DIR: /data
+      # Обязательно: свой пароль администратора (см. .env).
+      WAKANDA_ADMIN_PASS: ${WAKANDA_ADMIN_PASS:?задайте WAKANDA_ADMIN_PASS в .env}
+      # По желанию: фиксированные ключи Web Push. Если пусто — сгенерируются
+      # при первом запуске и сохранятся в /data (том переживёт перезапуск).
+      WAKANDA_VAPID_PUBLIC: ${WAKANDA_VAPID_PUBLIC:-}
+      WAKANDA_VAPID_PRIVATE: ${WAKANDA_VAPID_PRIVATE:-}
+      WAKANDA_VAPID_SUBJECT: ${WAKANDA_VAPID_SUBJECT:-mailto:admin@wakanda.local}
+    volumes:
+      - wakanda-data:/data
+
+volumes:
+  wakanda-data:
