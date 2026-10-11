@@ -1,0 +1,86 @@
+import { useState } from 'react';
+import { getHabitStats } from '../utils/calc';
+import { useAppStore } from '../store/AppStore';
+
+const weekdays = [
+  { value: 1, label: 'ПН' }, { value: 2, label: 'ВТ' }, { value: 3, label: 'СР' },
+  { value: 4, label: 'ЧТ' }, { value: 5, label: 'ПТ' }, { value: 6, label: 'СБ' }, { value: 0, label: 'ВС' },
+];
+const weekdayNames = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
+
+function RenameHabitControls({ task, actions }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(task.title);
+
+  function save() {
+    const title = draft.trim();
+    if (title) actions.renameHabit(task.id, title);
+    setEditing(false);
+  }
+
+  if (!editing) {
+    return <button type="button" className="text-button" onClick={() => { setDraft(task.title); setEditing(true); }} aria-label={`Переименовать ${task.title}`}>✎</button>;
+  }
+  return (
+    <span className="rename-inline">
+      <input type="text" value={draft} maxLength="80" aria-label="Новое название привычки" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') save(); if (event.key === 'Escape') setEditing(false); }} autoFocus />
+      <button type="button" className="text-button" onClick={save}>Сохранить</button>
+      <button type="button" className="text-button" onClick={() => setEditing(false)}>Отмена</button>
+    </span>
+  );
+}
+
+function HabitRow({ task, today, position, count, actions }) {
+  const stats = getHabitStats(task, today);
+  const schedule = task.schedule || [0, 1, 2, 3, 4, 5, 6];
+  const bestDay = stats.mostProductiveDay === null ? 'пока нет данных' : weekdayNames[stats.mostProductiveDay];
+
+  return (
+    <li className={`managed-habit ${task.archived ? 'is-archived' : ''}`}>
+      <div className="managed-habit-main"><span className="managed-habit-name">{task.title}</span><div className="managed-habit-stats"><span>РЕКОРД <b>{stats.bestStreak} дн.</b></span><span>МЕСЯЦ <b>{stats.monthPercent}%</b></span><span>ЛУЧШИЙ ДЕНЬ <b>{bestDay}</b></span></div></div>
+      {!task.archived && <div className="schedule-pills" role="group" aria-label={`Расписание привычки ${task.title}`}>
+        {weekdays.map((day) => <button key={day.value} className={schedule.includes(day.value) ? 'is-selected' : ''} type="button" onClick={() => actions.changeHabitSchedule(task.id, day.value)} aria-pressed={schedule.includes(day.value)} aria-label={`${day.label}: ${schedule.includes(day.value) ? 'по расписанию' : 'выходной'}`}>{day.label}</button>)}
+      </div>}
+      <div className="managed-habit-actions">
+        {!task.archived && <><button type="button" className="order-button" disabled={position === 0} onClick={() => actions.moveHabit(position, position - 1)} aria-label={`Поднять ${task.title} выше`}>↑</button><button type="button" className="order-button" disabled={position === count - 1} onClick={() => actions.moveHabit(position, position + 1)} aria-label={`Опустить ${task.title} ниже`}>↓</button><RenameHabitControls task={task} actions={actions} /><button type="button" className="text-button" onClick={() => actions.archiveHabit(task.id)}>В архив</button></>}
+        {task.archived && <button type="button" className="text-button" onClick={() => actions.restoreHabit(task.id)}>Вернуть</button>}
+        <button type="button" className="delete-btn" onClick={() => { if (window.confirm(`Удалить «${task.title}» вместе со всей историей? Если хотите сохранить историю, используйте «В архив».`)) actions.deleteHabit(task.id); }} aria-label={`Удалить ${task.title}`}>×</button>
+      </div>
+    </li>
+  );
+}
+
+export function HabitManager({ tasks, today }) {
+  const { actions } = useAppStore();
+  const [title, setTitle] = useState('');
+  const [schedule, setSchedule] = useState([0, 1, 2, 3, 4, 5, 6]);
+  const activeTasks = tasks.filter((task) => !task.archived);
+  const archivedTasks = tasks.filter((task) => task.archived);
+
+  function toggleDay(day) {
+    setSchedule((current) => current.includes(day) ? current.filter((value) => value !== day) : [...current, day]);
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle || schedule.length === 0) return;
+    actions.addHabit(trimmedTitle, weekdays.filter((day) => schedule.includes(day.value)).map((day) => day.value));
+    setTitle('');
+  }
+
+  return (
+    <div className="habit-manager">
+      <form className="habit-add-form" onSubmit={handleSubmit}>
+        <div className="habit-add-row"><label className="sr-only" htmlFor="habit-title">Название привычки</label><input id="habit-title" type="text" maxLength="80" placeholder="Например, утренняя тренировка" value={title} onChange={(event) => setTitle(event.target.value)} required /><button className="button button--red" type="submit">Добавить привычку</button></div>
+        <div className="habit-schedule-create"><span>Дни выполнения</span><div className="schedule-pills" role="group" aria-label="Дни выполнения новой привычки">{weekdays.map((day) => <button key={day.value} type="button" className={schedule.includes(day.value) ? 'is-selected' : ''} onClick={() => toggleDay(day.value)} aria-pressed={schedule.includes(day.value)}>{day.label}</button>)}</div><span className="schedule-hint">Выходные не прерывают серию</span></div>
+      </form>
+
+      <section className="habit-roster" aria-label="Активные привычки">
+        {activeTasks.length ? <ul>{activeTasks.map((task, index) => <HabitRow key={task.id} task={task} today={today} position={index} count={activeTasks.length} actions={actions} />)}</ul> : <p className="one-off-empty">Добавь первую привычку и выбери дни для неё.</p>}
+      </section>
+
+      <details className="habit-archive"><summary>Архив привычек <span>{archivedTasks.length}</span></summary>{archivedTasks.length ? <ul>{archivedTasks.map((task) => <HabitRow key={task.id} task={task} today={today} position={0} count={0} actions={actions} />)}</ul> : <p>Архивированных привычек пока нет.</p>}</details>
+    </div>
+  );
+}

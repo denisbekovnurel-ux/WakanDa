@@ -1,0 +1,14 @@
+.goal-card { position: relative; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 13px 34px 13px 11px; border: 1px solid #edf0ea; border-radius: 13px; background: #fff; }
+.goal-card--done { border-color: #cfe0d0; background: #f8fbf7; }
+.goal-card .progress-ring { flex: 0 0 auto; }
+.goal-card-info { flex: 1; min-width: 0; }
+.goal-card-info h3 { overflow: hidden; margin: 0 0 3px; color: #34453a; font: 700 .88rem Manrope,sans-serif; text-overflow: ellipsis; white-space: nowrap; }
+.goal-card-stats { margin: 0; color: #7f8c82; font-size: .75rem; }
+.goal-card-forecast,.goal-card-done-label { margin: 3px 0 0; color: #9aa49c; font-size: .67rem; line-height: 1.45; }
+.goal-card-rate { color: #aab1ab; }
+.goal-card-done-label { color: #568264; font-weight: 700; }
+.goal-card-form { display: flex; gap: 6px; margin-top: 8px; }
+.goal-card-form input { width: 115px; padding: 7px 9px; font-size: .72rem; }
+.goal-card-form .button { padding: 6px 10px; font-size: .72rem; }
+.goal-card .delete-btn { position: absolute; top: 8px; right: 6px; }
+@media (max-width: 480px) { .goal-card .progress-ring { width: 54px !important; height: 54px !important; } .goal-card .progress-ring-label { font-size: .76rem; } }

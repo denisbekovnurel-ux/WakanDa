@@ -1,0 +1,14 @@
+{
+  "name": "WakanDa — режим и цели",
+  "short_name": "WakanDa",
+  "description": "Привычки, цели и разовые задачи. Каждый день — шаг вперёд.",
+  "lang": "ru",
+  "start_url": "/#home",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#09080c",
+  "theme_color": "#09080c",
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
