@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useToday } from './hooks/useToday';
 import { usePrefersDark } from './hooks/usePrefersDark';
 import { useAppStore } from './store/AppStore';
@@ -58,7 +58,7 @@ function App() {
   const activeTasks = tasks.filter((task) => !task.archived);
   const completedToday = activeTasks.filter((task) => task.history?.[todayKey] === 'done').length;
   const pendingHabits = Math.max(0, activeTasks.filter((task) => (!task.schedule || task.schedule.includes(today.getDay())) && task.history?.[todayKey] !== 'done').length);
-  const badges = getBadges(state);
+  const badges = useMemo(() => getBadges(state), [state]);
   const unlockedCount = badges.filter((badge) => badge.unlocked).length;
 
   const { enable: requestReminderPermission } = useReminders({ enabled: reminderEnabled, reminderTime, pendingHabits, todayKey });

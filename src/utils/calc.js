@@ -176,6 +176,92 @@ export function getHabitStats(task, referenceDate = new Date()) {
   };
 }
 
+/**
+ * Доля выполненных привычек за конкретный день — основа графика «ритм месяца»,
+ * линии тренда и матрицы. Возвращает null, если в этот день по расписанию не
+ * было ни одной активной привычки (выходной) — такие дни отмечаем отдельно.
+ */
+export function buildDayPercent(tasks, dateKey, day) {
+  let expected = 0;
+  let done = 0;
+  for (const task of tasks) {
+    if (task.archived) continue;
+    if (task.createdAt && task.createdAt > dateKey) continue; // привычки ещё не было
+    if (!(task.schedule || [0, 1, 2, 3, 4, 5, 6]).includes(day.getDay())) continue;
+    if (isPaused(task, dateKey)) continue;
+    expected += 1;
+    if (task.history?.[dateKey] === STATUS.DONE) done += 1;
+  }
+  return expected === 0 ? null : done / expected;
+}
+
+/**
+ * Сводка выполнения за месяц по всем активным привычкам: сколько раз надо было
+ * отметить и сколько отмечено. asOfDay ограничивает расчёт (для текущего месяца
+ * считаем только до сегодня; для прошедших — весь месяц).
+ */
+export function getMonthSummary(tasks, year, month, asOfDay) {
+  const monthEnd = new Date(year, month + 1, 0);
+  const now = new Date();
+  const isFutureMonth = year > now.getFullYear() || (year === now.getFullYear() && month > now.getMonth());
+  const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
+  const fallbackDay = isFutureMonth ? 0 : isCurrentMonth ? now.getDate() : monthEnd.getDate();
+  const lastDay = Math.max(0, Math.min(asOfDay ?? fallbackDay, monthEnd.getDate()));
+  let expected = 0;
+  let done = 0;
+  for (let dayNumber = 1; dayNumber <= lastDay; dayNumber++) {
+    const day = new Date(year, month, dayNumber);
+    const dateKey = toDateKey(day);
+    for (const task of tasks) {
+      if (task.archived) continue;
+      if (task.createdAt && task.createdAt > dateKey) continue;
+      if (!(task.schedule || [0, 1, 2, 3, 4, 5, 6]).includes(day.getDay())) continue;
+      if (isPaused(task, dateKey)) continue;
+      expected += 1;
+      if (task.history?.[dateKey] === STATUS.DONE) done += 1;
+    }
+  }
+  return { done, expected, percent: expected ? Math.round((done / expected) * 100) : 0 };
+}
+
+/** Разница между текущим и прошлым процентом (в процентных пунктах). */
+export function getPercentDelta(currentPercent, previousPercent) {
+  return Math.round(currentPercent) - Math.round(previousPercent);
+}
+
+/**
+ * Сводка по дням недели за всю историю: сколько раз каждая привычка должна была
+ * выполняться и сколько раз выполнена. Используется, чтобы найти самый
+ * продуктивный день недели.
+ */
+export function getWeekdayStats(tasks, referenceDate = new Date()) {
+  const today = new Date(referenceDate);
+  today.setHours(0, 0, 0, 0);
+  const weekdays = Array.from({ length: 7 }, (_, day) => ({ day, done: 0, expected: 0 }));
+  for (const task of tasks) {
+    if (task.archived) continue;
+    const history = task.history || {};
+    const schedule = task.schedule || [0, 1, 2, 3, 4, 5, 6];
+    const created = task.createdAt ? new Date(`${task.createdAt}T00:00:00`) : null;
+    const start = created ?? new Date(today.getFullYear(), today.getMonth(), 1);
+    for (const day = new Date(start); day <= today; day.setDate(day.getDate() + 1)) {
+      if (!schedule.includes(day.getDay()) || isPaused(task, toDateKey(day))) continue;
+      weekdays[day.getDay()].expected += 1;
+      if (history[toDateKey(day)] === STATUS.DONE) weekdays[day.getDay()].done += 1;
+    }
+  }
+  return weekdays;
+}
+
+/** Самый продуктивный день недели (0 — воскресенье) или null, если данных нет. */
+export function getMostProductiveWeekday(tasks, referenceDate = new Date()) {
+  return getWeekdayStats(tasks, referenceDate).reduce((best, day) => {
+    if (!day.expected) return best;
+    if (!best || day.done / day.expected > best.done / best.expected) return day;
+    return best;
+  }, null)?.day ?? null;
+}
+
 // ---------- Утилиты дат ----------
 
 export function toDateKey(date) {

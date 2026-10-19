@@ -82,7 +82,7 @@ export function MonthGrid({ tasks }) {
                   const interactive = scheduled && !paused;
                   const statusLabel = !scheduled ? 'выходной по расписанию' : paused ? 'пауза' : status === STATUS.DONE ? 'выполнено' : status === STATUS.FAILED ? 'пропуск' : 'не отмечено';
                   return <button type="button" key={dateKey} disabled={!interactive}
-                    className={`month-day-cell month-day-cell--${paused ? 'paused' : status} ${dateKey === todayKey ? 'is-today' : ''} ${!scheduled ? 'is-rest' : ''}`}
+                    className={`month-day-cell month-day-cell--${paused ? 'paused' : status} ${dateKey === todayKey ? 'is-today' : ''} ${!scheduled ? 'is-rest' : ''} ${interactive && status === STATUS.EMPTY ? 'is-empty' : ''}`}
                     onClick={() => handleCellClick(task, dateKey, status)}
                     onKeyDown={(event) => {
                       // Пропуск доступен и с клавиатуры, а не только долгим нажатием/правым кликом.
@@ -106,7 +106,8 @@ export function MonthGrid({ tasks }) {
           </div>
         </div>
       )}
-      <div className="month-legend" aria-label="Условные обозначения"><span><i className="legend-dot legend-dot--done" /> выполнено</span><span><i className="legend-dot legend-dot--failed" /> пропуск</span><span><i className="legend-dot legend-dot--paused" /> пауза</span><span><i className="legend-dot" /> не отмечено</span><span className="month-scroll-hint">Удержание, правый клик или Delete — отметить пропуск</span></div>
+      <div className="month-legend" aria-label="Условные обозначения"><span><i className="legend-dot legend-dot--done" /> выполнено</span><span><i className="legend-dot legend-dot--failed" /> пропуск</span><span><i className="legend-dot legend-dot--paused" /> пауза</span><span><i className="legend-dot" /> не отмечено</span><span className="month-scroll-hint">Узкий экран — прокрути календарь в сторону.</span></div>
+      <p className="month-fail-hint"><b>Как отметить пропуск:</b> наведи на пустую ячейку — появится «×», затем удерживай её полсекунды, кликни правой кнопкой или нажми Delete.</p>
     </section>
   );
 }

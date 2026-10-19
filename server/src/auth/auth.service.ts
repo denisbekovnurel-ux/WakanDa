@@ -111,10 +111,15 @@ export class AuthService implements OnModuleInit {
     }
 
     const credentialsFile = join(this.dataDir, 'admin-credentials.txt');
+    // На диск пишем только логин и проверочный хэш — открытый пароль не храним.
     const content =
       'WakanDa — доступ администратора\n' +
       `Логин:  ${username}\n` +
-      `Пароль: ${password}\n\n` +
+      'Пароль: в открытом виде не хранится.\n' +
+      (usingDefaultPassword
+        ? '        Задайте свой пароль переменной WAKANDA_ADMIN_PASS в server/.env.\n'
+        : '        Значение задано переменной окружения WAKANDA_ADMIN_PASS.\n') +
+      `Проверочный хэш (scrypt): ${this.hashPassword(password)}\n\n` +
       'Это ЕДИНСТВЕННЫЙ администратор. Он создаётся автоматически и не может быть\n' +
       'удалён, заблокирован или продублирован (регистрация всегда создаёт обычных\n' +
       'пользователей, а лишние «админы» понижаются при запуске сервера).\n\n' +
@@ -124,8 +129,8 @@ export class AuthService implements OnModuleInit {
     } catch (error) {
       console.error('Не удалось сохранить файл с данными администратора:', error);
     }
+    const isProduction = process.env.NODE_ENV === 'production';
     if (usingDefaultPassword) {
-      const isProduction = process.env.NODE_ENV === 'production';
       console.warn(
         isProduction
           ? 'WakanDa: ВНИМАНИЕ! Пароль администратора не задан (используется значение по умолчанию из репозитория). Перед выходом в интернет задайте WAKANDA_ADMIN_PASS в server/.env!'
@@ -133,13 +138,14 @@ export class AuthService implements OnModuleInit {
       );
     }
     if (process.platform === 'win32') {
-      console.warn('WakanDa: на Windows права файла admin-credentials.txt (0600) не действуют — храните его как обычный секрет.');
+      console.warn('WakanDa: на Windows права файла admin-credentials.txt (0600) не действуют — считайте файл обычным секретом.');
     }
     console.log('\n============================================');
     console.log('  WakanDa: аккаунт администратора (единственный)');
     console.log(`  Логин:  ${username}`);
-    console.log(`  Пароль: ${password}`);
-    console.log(`  (файл: ${credentialsFile})`);
+    // В проде пароль в лог не пишем; в dev — показываем для удобства первого входа.
+    console.log(isProduction ? '  Пароль: задан переменной WAKANDA_ADMIN_PASS (в лог не выводится)' : `  Пароль: ${password}`);
+    console.log(`  Файл:   ${credentialsFile} (пароль хранится только хэшем)`);
     console.log('============================================\n');
   }
 
