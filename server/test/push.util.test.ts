@@ -33,8 +33,19 @@ describe('dueReminderDateKey', () => {
     expect(dueReminderDateKey({ reminderEnabled: true, reminderTime: '20:00' }, now, 180)).toBe('2026-10-11');
   });
 
-  it('не срабатывает в другую минуту', () => {
+  it('не срабатывает раньше назначенного времени', () => {
     expect(dueReminderDateKey({ reminderEnabled: true, reminderTime: '20:01' }, now, 180)).toBeNull();
+    expect(dueReminderDateKey({ reminderEnabled: true, reminderTime: '20:00' }, new Date('2026-10-11T16:59:00Z'), 180)).toBeNull();
+  });
+
+  it('догоняет напоминание, пропущенное в пределах окна', () => {
+    // Сервер лежал в 20:00 и поднялся в 20:30 — напоминание за тот же день уходит.
+    expect(dueReminderDateKey({ reminderEnabled: true, reminderTime: '20:00' }, new Date('2026-10-11T17:30:00Z'), 180)).toBe('2026-10-11');
+  });
+
+  it('не догоняет позже окна', () => {
+    // 23:31 при напоминании в 20:00 — это уже за пределами трёх часов.
+    expect(dueReminderDateKey({ reminderEnabled: true, reminderTime: '20:00' }, new Date('2026-10-11T20:31:00Z'), 180)).toBeNull();
   });
 
   it('молчит, если напоминания выключены', () => {

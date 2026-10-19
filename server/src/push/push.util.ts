@@ -8,8 +8,16 @@ export type ReminderSettings = {
 
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
+// Сколько минут после назначенного времени напоминание ещё может быть отправлено.
+export const REMINDER_GRACE_MINUTES = 180;
+
 function pad2(value: number): string {
   return String(value).padStart(2, '0');
+}
+
+function minutesOfDay(hhmm: string): number {
+  const [hours, minutes] = hhmm.split(':').map(Number);
+  return hours * 60 + minutes;
 }
 
 /**
@@ -33,9 +41,13 @@ export function localDateParts(now: Date, offsetMinutes: number): { dateKey: str
 }
 
 /**
- * Возвращает локальную дату («YYYY-MM-DD»), если прямо сейчас наступило время
- * напоминания, иначе null. Одно напоминание в день — вызывающий сверяет дату
+ * Возвращает локальную дату («YYYY-MM-DD»), если сейчас нужно отправить
+ * напоминание, иначе null. Одно напоминание в день — вызывающий сверяет дату
  * с журналом отправок.
+ *
+ * Точная минута не обязательна: если сервер в этот момент лежал (деплой,
+ * перезапуск, нагрузка), напоминание догоняет в течение окна REMINDER_GRACE_MINUTES.
+ * Дублей не будет — отправку ограничивает push_log.
  */
 export function dueReminderDateKey(
   settings: ReminderSettings | null | undefined,
@@ -46,5 +58,6 @@ export function dueReminderDateKey(
   const match = TIME_RE.exec(String(settings.reminderTime ?? ''));
   if (!match) return null;
   const { dateKey, hhmm } = localDateParts(now, normalizeTimezoneOffset(offsetMinutes));
-  return hhmm === `${match[1]}:${match[2]}` ? dateKey : null;
+  const diff = minutesOfDay(hhmm) - minutesOfDay(`${match[1]}:${match[2]}`);
+  return diff >= 0 && diff <= REMINDER_GRACE_MINUTES ? dateKey : null;
 }

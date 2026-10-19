@@ -6,6 +6,9 @@ import { dueReminderDateKey, normalizeTimezoneOffset, ReminderSettings } from '.
 
 // Раз в минуту проверяем, у кого наступило время напоминания.
 const CHECK_INTERVAL_MS = 60_000;
+// Журнал отправок нужен только для защиты от дублей — старое убираем.
+const PRUNE_INTERVAL_MS = 60 * 60_000;
+const PUSH_LOG_RETENTION_DAYS = 30;
 
 export type PushPayload = { title: string; body: string; url?: string };
 
@@ -24,6 +27,7 @@ type ReminderRow = { user_id: string; data: string; tz: number | null };
 export class PushService implements OnModuleInit, OnModuleDestroy {
   private readonly db: Database.Database;
   private timer: NodeJS.Timeout | null = null;
+  private pruneTimer: NodeJS.Timeout | null = null;
   private vapidPublic = '';
   private vapidPrivate = '';
   private ready = false;
@@ -37,13 +41,22 @@ export class PushService implements OnModuleInit, OnModuleDestroy {
     this.timer = setInterval(() => {
       this.runReminders().catch((error) => console.error('Push: напоминания не отработали:', error));
     }, CHECK_INTERVAL_MS);
-    // Не держим процесс живым только из-за таймера напоминаний.
+    this.pruneTimer = setInterval(() => this.prunePushLog(), PRUNE_INTERVAL_MS);
+    // Не держим процесс живым только из-за таймеров напоминаний.
     this.timer.unref?.();
+    this.pruneTimer.unref?.();
   }
 
   onModuleDestroy() {
     if (this.timer) clearInterval(this.timer);
+    if (this.pruneTimer) clearInterval(this.pruneTimer);
     this.timer = null;
+    this.pruneTimer = null;
+  }
+
+  private prunePushLog() {
+    const cutoff = new Date(Date.now() - PUSH_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    this.db.prepare('DELETE FROM push_log WHERE date_key < ?').run(cutoff);
   }
 
   /** Публичный VAPID-ключ — его отдаём клиенту, чтобы тот оформил подписку. */
