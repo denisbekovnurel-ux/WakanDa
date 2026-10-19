@@ -86,23 +86,6 @@ export class DatabaseService implements OnModuleDestroy {
         priority TEXT NOT NULL DEFAULT 'normal',
         sort_order INTEGER NOT NULL DEFAULT 0
       );
-      CREATE TABLE IF NOT EXISTS goals (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        unit TEXT NOT NULL DEFAULT 'шт',
-        target REAL NOT NULL,
-        daily_rate REAL NOT NULL DEFAULT 1,
-        current REAL NOT NULL DEFAULT 0,
-        created_at TEXT,
-        sort_order INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE TABLE IF NOT EXISTS goal_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        goal_id TEXT NOT NULL,
-        date TEXT NOT NULL,
-        amount REAL NOT NULL,
-        FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE CASCADE
-      );
       CREATE TABLE IF NOT EXISTS notes (
         date_key TEXT PRIMARY KEY,
         text TEXT NOT NULL

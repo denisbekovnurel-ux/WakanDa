@@ -120,7 +120,7 @@ export function createProgressCard({ monthLabel, percent, done, expected, days =
   ctx.textAlign = 'right';
   ctx.fillStyle = '#7d7488';
   ctx.font = '600 24px "DM Sans", sans-serif';
-  ctx.fillText('WakanDa · привычки и цели', size - 80, size - 84);
+  ctx.fillText('WakanDa · привычки', size - 80, size - 84);
 
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Не удалось собрать картинку'))), 'image/png');

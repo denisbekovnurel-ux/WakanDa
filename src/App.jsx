@@ -11,7 +11,6 @@ import { SyncConflictDialog } from './components/SyncConflictDialog';
 import { PasswordChangeDialog } from './components/PasswordChangeDialog';
 import { OneOffList } from './components/OneOffList';
 import { MonthGrid } from './components/MonthGrid';
-import { GoalCard } from './components/GoalCard/GoalCard';
 import { StatsPage } from './components/Stats/StatsPage';
 import { NotesPanel } from './components/NotesPanel/NotesPanel';
 import { getBadges } from './utils/badges';
@@ -26,7 +25,6 @@ const pages = {
   home: { label: 'HOME 홈', en: 'HOME', ko: '홈', eyebrow: 'ПЛАН НА ДЕЙСТВИЕ', title: 'Точка старта', description: 'Порядок в делах. Холодная голова. Каждый день — шаг вперёд.', image: 'home-bg.jpg' },
   daily: { label: 'DAILY 매일', en: 'DAILY', ko: '매일', eyebrow: 'РИТМ И ПОВТОРЕНИЕ', title: 'Ежедневный режим', description: 'Отмечай сделанное. Месяц покажет, насколько крепка твоя дисциплина.', image: 'daily-bg.jpg' },
   oneoff: { label: 'ONE-SHOT 단발', en: 'ONE-SHOT', ko: '단발', eyebrow: 'ДЕЛО ДОЛЖНО БЫТЬ ЗАКРЫТО', title: 'Разовые задачи', description: 'Список конкретных дел. Выполнил — закрыл. История остаётся в архиве.', image: 'oneoff-bg.jpg' },
-  goals: { label: 'GOALS 목표', en: 'GOALS', ko: '목표', eyebrow: 'БЕЗ ОТСТУПЛЕНИЙ', title: 'Планка выше', description: 'Зафиксируй цель. Выдержи темп. Забери результат.', image: 'goals-bg.jpg' },
   stats: { label: 'STATS 통계', en: 'STATS', ko: '통계', eyebrow: 'ЦИФРЫ НЕ ВРУТ', title: 'Статистика', description: 'Серия, ритм месяца и годовая карта — виден весь путь целиком.', image: 'stats-bg.jpg' },
   admin: { label: 'ADMIN 관리자', en: 'ADMIN', ko: '관리자', eyebrow: 'УПРАВЛЕНИЕ ДОСТУПОМ', title: 'Админ-панель', description: 'Одобряй заявки, следи за активностью и управляй доступом пользователей.', image: 'admin-bg.jpg' },
 };
@@ -42,7 +40,7 @@ function App() {
   const { state, actions, conflict, resolveConflict } = useAppStore();
   const { user, token, logout } = useAuth();
   const isAdmin = user?.role === 'admin';
-  const { tasks, oneOffTasks, goals, theme, reminderTime, reminderEnabled } = state;
+  const { tasks, oneOffTasks, theme, reminderTime, reminderEnabled } = state;
   const prefersDark = usePrefersDark();
   // «system» — следуем системной теме, иначе берём явный выбор пользователя.
   const effectiveTheme = theme === 'system' ? (prefersDark ? 'dark' : 'light') : theme;
@@ -53,7 +51,6 @@ function App() {
   const [installPrompt, setInstallPrompt] = useState(null);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [quoteIndex, setQuoteIndex] = useState(() => Math.floor(Math.random() * quotes.length));
-  const [goalForm, setGoalForm] = useState({ title: '', target: '', unit: '', dailyRate: '' });
   const { today, todayKey } = useToday();
   const activeTasks = tasks.filter((task) => !task.archived);
   const completedToday = activeTasks.filter((task) => task.history?.[todayKey] === 'done').length;
@@ -84,19 +81,6 @@ function App() {
     }, 20000);
     return () => window.clearInterval(interval);
   }, []);
-
-  function handleAddGoal(event) {
-    event.preventDefault();
-    const { title, target, unit, dailyRate } = goalForm;
-    if (!title.trim() || Number(target) <= 0 || Number(dailyRate) <= 0) return;
-    actions.addGoal({ title: title.trim(), unit: unit.trim() || 'шт', target: Number(target), dailyRate: Number(dailyRate) }, todayKey);
-    setGoalForm({ title: '', target: '', unit: '', dailyRate: '' });
-  }
-
-  function handleDeleteGoal(id, title) {
-    if (!window.confirm(`Удалить цель «${title}» и всю её историю прогресса?`)) return;
-    actions.deleteGoal(id);
-  }
 
   async function toggleReminders() {
     if (reminderEnabled) {
@@ -165,7 +149,6 @@ function App() {
             <section className="stats-grid" aria-label="Сводка">
               <article className="stat-card"><span className="stat-icon" aria-hidden="true">✦</span><div><p className="stat-label">Выполнено сегодня</p><p className="stat-value">{completedToday}<span> / {activeTasks.length}</span></p><p className="stat-foot">{pluralize(completedToday, 'привычка выполнена', 'привычки выполнены', 'привычек выполнено')}</p></div></article>
               <article className="stat-card stat-card--red"><span className="stat-icon" aria-hidden="true">⚔</span><div><p className="stat-label">Разовые задачи</p><p className="stat-value">{oneOffTasks.filter((task) => !task.done).length}<span> в работе</span></p><p className="stat-foot">{oneOffTasks.filter((task) => task.done).length} закрыто и в архиве</p></div></article>
-              <article className="stat-card stat-card--violet"><span className="stat-icon" aria-hidden="true">◎</span><div><p className="stat-label">Цели</p><p className="stat-value">{goals.length}<span> {pluralize(goals.length, 'цель', 'цели', 'целей')}</span></p><p className="stat-foot">держи курс на своё</p></div></article>
               <article className="stat-card stat-card--gold"><span className="stat-icon" aria-hidden="true">🏅</span><div><p className="stat-label">Награды</p><p className="stat-value">{unlockedCount}<span> / {badges.length}</span></p><p className="stat-foot"><a className="text-link" href="#stats">смотреть достижения</a></p></div></article>
             </section>
             <div className="home-grid">
@@ -179,8 +162,6 @@ function App() {
         {page === 'daily' && <section className="section-card page-section"><MonthGrid tasks={activeTasks} /><NotesPanel /><div className="daily-task-manager"><div className="section-heading"><div><p className="eyebrow">ДИСЦИПЛИНА КАЖДЫЙ ДЕНЬ</p><h2>Управление привычками</h2></div><span className="section-count">{activeTasks.length} {pluralize(activeTasks.length, 'привычка', 'привычки', 'привычек')}</span></div><HabitManager tasks={tasks} today={today} /></div></section>}
 
         {page === 'oneoff' && <section className="section-card page-section"><div className="section-heading"><div><p className="eyebrow">ОДИН РАЗ — НО ДО КОНЦА</p><h2>Список действий</h2></div><span className="section-count">{oneOffTasks.filter((task) => !task.done).length} открыто</span></div><p className="section-description">Небольшие дела тоже требуют решения. Закрывай их одно за другим.</p><OneOffList tasks={oneOffTasks} todayKey={todayKey} /></section>}
-
-        {page === 'goals' && <section className="section-card page-section goals-page"><div className="section-heading"><div><p className="eyebrow">ПЛАН. НАГРУЗКА. РЕЗУЛЬТАТ.</p><h2>Карта целей</h2></div><span className="section-count">{goals.length} {pluralize(goals.length, 'цель', 'цели', 'целей')}</span></div><p className="section-description">Назови цель так, чтобы она задавала планку. Зафиксируй норму и ежедневно добавляй прогресс.</p><form className="goal-create-form" onSubmit={handleAddGoal}><label className="sr-only" htmlFor="goal-title">Название цели</label><input id="goal-title" type="text" placeholder="Например, пройти 1000 км" value={goalForm.title} onChange={(event) => setGoalForm({ ...goalForm, title: event.target.value })} required maxLength="80" /><div className="goal-fields"><label><span>Общий объём</span><input type="number" min="1" placeholder="1000" aria-label="Общий объём цели" value={goalForm.target} onChange={(event) => setGoalForm({ ...goalForm, target: event.target.value })} required /></label><label><span>Единица</span><input type="text" placeholder="км" aria-label="Единица измерения" value={goalForm.unit} onChange={(event) => setGoalForm({ ...goalForm, unit: event.target.value })} maxLength="12" /></label><label><span>Норма в день</span><input type="number" min="1" placeholder="5" aria-label="Ежедневная норма" value={goalForm.dailyRate} onChange={(event) => setGoalForm({ ...goalForm, dailyRate: event.target.value })} required /></label></div><button className="button button--red" type="submit"><span aria-hidden="true">＋</span> Зафиксировать цель</button></form><ul className="goal-list" aria-label="Список целей">{goals.length === 0 ? <li className="empty-state"><span aria-hidden="true">◎</span><p>Поставь цель. Задай норму. Начни выполнять.</p></li> : goals.map((goal) => <GoalCard key={goal.id} goal={goal} onDelete={() => handleDeleteGoal(goal.id, goal.title)} />)}</ul></section>}
 
         {page === 'stats' && <StatsPage />}
 

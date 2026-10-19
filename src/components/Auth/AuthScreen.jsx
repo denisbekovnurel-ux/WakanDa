@@ -47,7 +47,7 @@ export function AuthScreen() {
     <div className="auth-shell">
       <div className="auth-card">
         <AuthBrand />
-        <p className="auth-tagline">Дисциплина, привычки и цели. Доступ по одобрению.</p>
+        <p className="auth-tagline">Дисциплина и привычки. Доступ по одобрению.</p>
 
         <div className="auth-tabs" role="tablist" aria-label="Вход или регистрация">
           <button

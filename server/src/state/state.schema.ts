@@ -28,16 +28,6 @@ export type AppState = {
     deadline?: string;
     priority?: string;
   }>;
-  goals: Array<{
-    id: string;
-    title: string;
-    unit: string;
-    target: number;
-    dailyRate: number;
-    current: number;
-    log: Array<{ date: string; amount: number }>;
-    createdAt?: string;
-  }>;
   notes: Record<string, string>;
   theme: string;
   reminderTime: string;
@@ -49,7 +39,6 @@ export const DEFAULT_STATE: AppState = {
   version: SCHEMA_VERSION,
   tasks: [],
   oneOffTasks: [],
-  goals: [],
   notes: {},
   theme: 'system',
   reminderTime: '20:00',
@@ -65,12 +54,9 @@ export const LIMITS = {
   scheduleDays: 7,
   pauseRangesPerTask: 200,
   oneOffTasks: 2000,
-  goals: 500,
-  goalLog: 20000,
   notes: 10000,
   title: 200,
   note: 5000,
-  unit: 24,
   id: 128,
   timestamp: 40,
   deadline: 32,
@@ -217,43 +203,6 @@ function sanitizeOneOff(input: unknown, index: number): AppState['oneOffTasks'][
   };
 }
 
-function readGoalLog(value: unknown, where: string): Array<{ date: string; amount: number }> {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) fail(`${where}: журнал прогресса должен быть списком`);
-  if (value.length > LIMITS.goalLog) fail(`${where}: слишком много записей прогресса (максимум ${LIMITS.goalLog})`);
-  return value.map((entry, index) => {
-    if (!isPlainObject(entry)) fail(`${where}: запись прогресса №${index + 1} повреждена`);
-    if (typeof entry.date !== 'string' || !DATE_RE.test(entry.date)) {
-      fail(`${where}: запись прогресса №${index + 1} — некорректная дата`);
-    }
-    const amount = Number(entry.amount);
-    if (!Number.isFinite(amount)) fail(`${where}: запись прогресса №${index + 1} — некорректное число`);
-    return { date: entry.date, amount };
-  });
-}
-
-function sanitizeGoal(input: unknown, index: number): AppState['goals'][number] {
-  const where = `Цель №${index + 1}`;
-  if (!isPlainObject(input)) fail(`${where}: ожидается объект`);
-  const target = Number(input.target);
-  if (!Number.isFinite(target) || target <= 0) fail(`${where}: общий объём должен быть положительным числом`);
-  const dailyRate = Number(input.dailyRate);
-  if (!Number.isFinite(dailyRate) || dailyRate <= 0) fail(`${where}: норма в день должна быть положительным числом`);
-  const current = Number(input.current);
-  const unitRaw = typeof input.unit === 'string' ? input.unit.trim() : '';
-  if (unitRaw.length > LIMITS.unit) fail(`${where}: единица измерения слишком длинная`);
-  return {
-    id: readId(input.id),
-    title: readTitle(input.title, where),
-    unit: unitRaw || 'шт',
-    target,
-    dailyRate,
-    current: Number.isFinite(current) ? current : 0,
-    log: readGoalLog(input.log, where),
-    createdAt: readOptionalString(input.createdAt, LIMITS.timestamp),
-  };
-}
-
 function readNotes(value: unknown): Record<string, string> {
   if (value === undefined || value === null) return {};
   if (!isPlainObject(value)) fail('Заметки должны быть объектом');
@@ -286,10 +235,6 @@ export function sanitizeAppState(input: unknown): AppState {
   if (!Array.isArray(oneOffInput)) fail('Поле «oneOffTasks» должно быть списком');
   if (oneOffInput.length > LIMITS.oneOffTasks) fail(`Слишком много разовых дел (максимум ${LIMITS.oneOffTasks})`);
 
-  const goalsInput = input.goals ?? [];
-  if (!Array.isArray(goalsInput)) fail('Поле «goals» должно быть списком');
-  if (goalsInput.length > LIMITS.goals) fail(`Слишком много целей (максимум ${LIMITS.goals})`);
-
   const reminderTime = typeof input.reminderTime === 'string' && TIME_RE.test(input.reminderTime) ? input.reminderTime : '20:00';
   const lastAutoBackupAt = Number(input.lastAutoBackupAt);
 
@@ -297,7 +242,6 @@ export function sanitizeAppState(input: unknown): AppState {
     version: SCHEMA_VERSION,
     tasks: tasksInput.map(sanitizeHabit),
     oneOffTasks: oneOffInput.map(sanitizeOneOff),
-    goals: goalsInput.map(sanitizeGoal),
     notes: readNotes(input.notes),
     theme: typeof input.theme === 'string' && VALID_THEMES.has(input.theme) ? input.theme : 'system',
     reminderTime,

@@ -59,5 +59,5 @@ export async function createStateSnapshot(token, reason = 'manual') {
 }
 
 export function isEmptyAppState(state) {
-  return !state.tasks.length && !state.oneOffTasks.length && !state.goals.length && Object.keys(state.notes).length === 0;
+  return !state.tasks.length && !state.oneOffTasks.length && Object.keys(state.notes).length === 0;
 }

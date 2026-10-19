@@ -7,7 +7,6 @@ export const DEFAULT_STATE = {
   version: SCHEMA_VERSION,
   tasks: [],
   oneOffTasks: [],
-  goals: [],
   notes: {},
   theme: 'system',
   reminderTime: '20:00',
@@ -81,23 +80,6 @@ export function normalizeOneOff(task) {
   };
 }
 
-export function normalizeGoal(goal) {
-  if (!isPlainObject(goal) || typeof goal.title !== 'string' || !goal.title.trim()) return null;
-  const target = Number(goal.target);
-  const dailyRate = Number(goal.dailyRate);
-  if (!Number.isFinite(target) || target <= 0) return null;
-  return {
-    id: typeof goal.id === 'string' ? goal.id : crypto.randomUUID(),
-    title: goal.title,
-    unit: typeof goal.unit === 'string' && goal.unit ? goal.unit : 'шт',
-    target,
-    dailyRate: Number.isFinite(dailyRate) && dailyRate > 0 ? dailyRate : 1,
-    current: Number(goal.current) || 0,
-    log: Array.isArray(goal.log) ? goal.log.filter((item) => isPlainObject(item) && typeof item.date === 'string').map((item) => ({ date: item.date, amount: Number(item.amount) || 0 })) : [],
-    createdAt: typeof goal.createdAt === 'string' ? goal.createdAt : undefined,
-  };
-}
-
 export function normalizeNotes(notes) {
   if (!isPlainObject(notes)) return {};
   const result = {};
@@ -117,7 +99,6 @@ export function normalizeState(input) {
     version: SCHEMA_VERSION,
     tasks: Array.isArray(source.tasks) ? source.tasks.map(normalizeHabit).filter(Boolean) : [],
     oneOffTasks: Array.isArray(source.oneOffTasks) ? source.oneOffTasks.map(normalizeOneOff).filter(Boolean) : [],
-    goals: Array.isArray(source.goals) ? source.goals.map(normalizeGoal).filter(Boolean) : [],
     notes: normalizeNotes(source.notes),
     theme: VALID_THEMES.has(source.theme) ? source.theme : 'system',
     reminderTime: typeof source.reminderTime === 'string' && /^\d{2}:\d{2}$/.test(source.reminderTime) ? source.reminderTime : '20:00',
@@ -132,13 +113,12 @@ export function normalizeState(input) {
  */
 export function assertValidBackupData(data) {
   if (!isPlainObject(data)) throw new Error('Некорректное содержимое файла.');
-  for (const key of ['tasks', 'oneOffTasks', 'goals']) {
+  for (const key of ['tasks', 'oneOffTasks']) {
     if (!Array.isArray(data[key])) throw new Error(`Поле «${key}» в бэкапе должно быть списком.`);
   }
   const hasBrokenHabit = data.tasks.some((task) => !isPlainObject(task) || typeof task.title !== 'string');
   const hasBrokenOneOff = data.oneOffTasks.some((task) => !isPlainObject(task) || typeof task.title !== 'string');
-  const hasBrokenGoal = data.goals.some((goal) => !isPlainObject(goal) || typeof goal.title !== 'string' || !(Number(goal.target) > 0));
-  if (hasBrokenHabit || hasBrokenOneOff || hasBrokenGoal) {
+  if (hasBrokenHabit || hasBrokenOneOff) {
     throw new Error('В бэкапе есть повреждённые записи.');
   }
   return true;

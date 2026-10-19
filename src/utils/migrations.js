@@ -6,7 +6,6 @@ const META_KEY = 'wakanda-sync-meta-v2';
 const LEGACY_KEYS = {
   tasks: 'wakanda-daily-tasks',
   oneOffTasks: 'wakanda-one-off-tasks',
-  goals: 'wakanda-goals',
   theme: 'wakanda-theme',
   reminderTime: 'wakanda-reminder-time',
   reminderEnabled: 'wakanda-reminder-enabled',

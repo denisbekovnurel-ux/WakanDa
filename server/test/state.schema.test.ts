@@ -5,7 +5,6 @@ const base = {
   version: 2,
   tasks: [],
   oneOffTasks: [],
-  goals: [],
   notes: {},
   theme: 'system',
   reminderTime: '20:00',
@@ -17,7 +16,6 @@ describe('sanitizeAppState', () => {
   it('нормализует пустое состояние', () => {
     const state = sanitizeAppState({});
     expect(state.tasks).toEqual([]);
-    expect(state.goals).toEqual([]);
     expect(state.theme).toBe('system');
     expect(state.reminderTime).toBe('20:00');
   });
@@ -74,10 +72,6 @@ describe('sanitizeAppState', () => {
     expect(sanitizeAppState({ ...base, theme: 'light' }).theme).toBe('light');
     expect(sanitizeAppState({ ...base, theme: 'dark' }).theme).toBe('dark');
     expect(sanitizeAppState({ ...base, theme: 'neon' }).theme).toBe('system');
-  });
-
-  it('требует положительный объём цели', () => {
-    expect(() => sanitizeAppState({ ...base, goals: [{ title: 'Книги', target: 0 }] })).toThrow(/положительн/i);
   });
 
   it('отбрасывает неизвестный приоритет и чинит дедлайн', () => {

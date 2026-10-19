@@ -108,7 +108,6 @@ async function main() {
     version: 2,
     tasks: [{ id: 'h1', title: 'Бег', history: { '2026-10-01': 'done' }, pauseRanges: [{ from: '2026-10-10', to: '2026-10-12' }] }],
     oneOffTasks: [{ id: 'o1', title: 'Позвонить', done: false, priority: 'high', deadline: '2026-10-30' }],
-    goals: [{ id: 'g1', title: 'Книги', unit: 'шт', target: 12, dailyRate: 1, current: 3, log: [{ date: '2026-10-01', amount: 2 }] }],
     notes: { '2026-10-01': 'заметка' },
     theme: 'system',
     reminderTime: '20:00',

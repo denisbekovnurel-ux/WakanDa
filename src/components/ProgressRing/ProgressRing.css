@@ -3,5 +3,4 @@
 .progress-ring-track,.progress-ring-value { fill: none; stroke-width: 9; }
 .progress-ring-track { stroke: #edf1eb; }
 .progress-ring-value { stroke: #71977a; stroke-linecap: round; transition: stroke-dashoffset .35s ease; }
-.goal-card--done .progress-ring-value { stroke: #4f825c; }
 .progress-ring-label { position: absolute; color: #536b58; font: 800 .91rem Manrope,sans-serif; }

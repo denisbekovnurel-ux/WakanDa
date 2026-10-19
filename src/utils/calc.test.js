@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDayPercent, getBestStreak, getGoalProgress, getHabitStats, getMonthSummary, getMostProductiveWeekday, getPercentDelta, getStreak, isPaused, toggleDoneStatus, markFailedStatus, toDateKey, STATUS } from './calc';
+import { buildDayPercent, getBestStreak, getHabitStats, getMonthSummary, getMostProductiveWeekday, getPercentDelta, getStreak, isPaused, toggleDoneStatus, markFailedStatus, toDateKey, STATUS } from './calc';
 
 function keyDaysAgo(n) {
   const date = new Date();
@@ -80,29 +80,6 @@ describe('getHabitStats', () => {
     const history = { [keyDaysAgo(0)]: 'done', [keyDaysAgo(1)]: 'done' };
     const stats = getHabitStats({ history });
     expect(stats.bestStreak).toBe(2);
-  });
-});
-
-describe('getGoalProgress', () => {
-  it('считает percent, remaining и isDone', () => {
-    const goal = { target: 100, current: 40, dailyRate: 5, createdAt: keyDaysAgo(3), log: [] };
-    const progress = getGoalProgress(goal);
-    expect(progress.current).toBe(40);
-    expect(progress.percent).toBe(40);
-    expect(progress.remaining).toBe(60);
-    expect(progress.isDone).toBe(false);
-    expect(progress.daysLeft).toBeGreaterThan(0);
-  });
-
-  it('учитывает лог, а не только поле current', () => {
-    const goal = { target: 10, createdAt: keyDaysAgo(0), current: 0, log: [{ date: keyDaysAgo(0), amount: 3 }, { date: keyDaysAgo(0), amount: 2 }] };
-    expect(getGoalProgress(goal).current).toBe(5);
-  });
-
-  it('isDone при достижении цели', () => {
-    const goal = { target: 10, current: 10, dailyRate: 1, createdAt: keyDaysAgo(1), log: [] };
-    expect(getGoalProgress(goal).isDone).toBe(true);
-    expect(getGoalProgress(goal).daysLeft).toBe(0);
   });
 });
 

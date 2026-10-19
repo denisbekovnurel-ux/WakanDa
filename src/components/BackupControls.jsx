@@ -20,7 +20,6 @@ export function BackupControls() {
     const data = {
       tasks: state.tasks,
       oneOffTasks: state.oneOffTasks,
-      goals: state.goals,
       notes: state.notes,
       theme: state.theme,
       reminderTime: state.reminderTime,
@@ -49,7 +48,7 @@ export function BackupControls() {
       const isKnownFormat = backup?.format === 'wakanda-backup' && (backup?.version === 2 || backup?.version === 1);
       if (!isKnownFormat) throw new Error('Формат копии не распознан.');
       assertValidBackupData(data);
-      if (!window.confirm('Восстановление заменит текущие привычки, задачи и цели данными из файла. Продолжить?')) return;
+      if (!window.confirm('Восстановление заменит текущие привычки и задачи данными из файла. Продолжить?')) return;
       // Снимок текущего состояния на сервере — чтобы импорт можно было откатить.
       try {
         await createStateSnapshot(token, 'import');

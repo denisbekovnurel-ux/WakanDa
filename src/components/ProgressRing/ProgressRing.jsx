@@ -1,6 +1,6 @@
 import './ProgressRing.css';
 
-export function ProgressRing({ percent, size = 100, ariaLabel = 'Прогресс цели' }) {
+export function ProgressRing({ percent, size = 100, ariaLabel = 'Прогресс' }) {
   const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
   const radius = 42;
   const circumference = 2 * Math.PI * radius;

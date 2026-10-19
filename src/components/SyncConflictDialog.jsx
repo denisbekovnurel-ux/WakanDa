@@ -5,7 +5,6 @@ function summarize(state) {
   return [
     `${state.tasks.length} ${pluralize(state.tasks.length, 'привычка', 'привычки', 'привычек')}`,
     `${state.oneOffTasks.length} ${pluralize(state.oneOffTasks.length, 'разовое дело', 'разовых дела', 'разовых дел')}`,
-    `${state.goals.length} ${pluralize(state.goals.length, 'цель', 'цели', 'целей')}`,
     `${Object.keys(state.notes).length} ${pluralize(Object.keys(state.notes).length, 'заметка', 'заметки', 'заметок')}`,
   ];
 }

@@ -90,22 +90,6 @@ function reducer(state, action) {
       [list[from], list[to]] = [list[to], list[from]];
       return { ...state, oneOffTasks: list };
     }
-    case 'goal/add':
-      return { ...state, goals: [...state.goals, { id: crypto.randomUUID(), title: action.title, unit: action.unit, target: action.target, dailyRate: action.dailyRate, current: 0, log: [], createdAt: action.todayKey }] };
-    case 'goal/progress': {
-      return {
-        ...state,
-        goals: state.goals.map((goal) => {
-          if (goal.id !== action.id) return goal;
-          const log = Array.isArray(goal.log) ? goal.log : (goal.current ? [{ date: goal.createdAt || action.todayKey, amount: Number(goal.current) }] : []);
-          return { ...goal, current: (Number(goal.current) || 0) + action.amount, log: [...log, { date: action.todayKey, amount: action.amount }] };
-        }),
-      };
-    }
-    case 'goal/rename':
-      return { ...state, goals: state.goals.map((goal) => (goal.id === action.id && action.title.trim() ? { ...goal, title: action.title.trim() } : goal)) };
-    case 'goal/delete':
-      return { ...state, goals: state.goals.filter((goal) => goal.id !== action.id) };
     case 'notes/set': {
       const notes = { ...state.notes };
       if (action.text.trim()) notes[action.dateKey] = action.text;
@@ -147,10 +131,6 @@ function useActions(dispatch) {
     deleteOneOff: (id) => dispatch({ type: 'oneoff/delete', id }),
     renameOneOff: (id, title) => dispatch({ type: 'oneoff/rename', id, title }),
     moveOneOff: (id, direction) => dispatch({ type: 'oneoff/move', id, direction }),
-    addGoal: ({ title, target, unit, dailyRate }, todayKey) => dispatch({ type: 'goal/add', title, unit, target, dailyRate, todayKey }),
-    addGoalProgress: (id, amount, todayKey) => dispatch({ type: 'goal/progress', id, amount, todayKey }),
-    renameGoal: (id, title) => dispatch({ type: 'goal/rename', id, title }),
-    deleteGoal: (id) => dispatch({ type: 'goal/delete', id }),
     setNote: (dateKey, text) => dispatch({ type: 'notes/set', dateKey, text }),
     setTheme: (value) => dispatch({ type: 'settings/theme', value }),
     setReminderTime: (value) => dispatch({ type: 'settings/reminderTime', value }),

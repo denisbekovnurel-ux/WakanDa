@@ -24,7 +24,7 @@ const ogSource = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630"
   <rect width="1200" height="630" fill="url(#glow)"/>
   <g transform="translate(344 96)">${source.toString().replace(/^<\?xml[^>]*\?>/, '')}</g>
   <text x="600" y="585" font-family="Manrope, Arial, sans-serif" font-size="62" font-weight="800" fill="#f3e8ef" text-anchor="middle" letter-spacing="1">WakanDa.<tspan fill="#e43e50">*</tspan></text>
-  <text x="600" y="623" font-family="Arial, sans-serif" font-size="22" font-weight="600" fill="#c9a1b4" text-anchor="middle" letter-spacing="7">HABITS · GOALS · DISCIPLINE</text>
+  <text x="600" y="623" font-family="Arial, sans-serif" font-size="22" font-weight="600" fill="#c9a1b4" text-anchor="middle" letter-spacing="7">HABITS · TASKS · DISCIPLINE</text>
 </svg>`;
 
 async function render(svg, width, height, out) {

@@ -189,7 +189,6 @@ export class StateService {
     return (
       !state.tasks.length &&
       !state.oneOffTasks.length &&
-      !state.goals.length &&
       Object.keys(state.notes).length === 0
     );
   }
@@ -213,18 +212,6 @@ export class StateService {
     const oneOffTasks = this.db.prepare('SELECT * FROM one_off_tasks ORDER BY sort_order, created_at').all() as Array<{
       id: string; title: string; done: number; created_at: string | null; deadline: string | null; priority: string;
     }>;
-    const goals = this.db.prepare('SELECT * FROM goals ORDER BY sort_order, created_at').all() as Array<{
-      id: string; title: string; unit: string; target: number; daily_rate: number; current: number; created_at: string | null;
-    }>;
-    const logRows = this.db.prepare('SELECT goal_id, date, amount FROM goal_log ORDER BY id').all() as Array<{
-      goal_id: string; date: string; amount: number;
-    }>;
-    const logByGoal = new Map<string, Array<{ date: string; amount: number }>>();
-    for (const row of logRows) {
-      const bucket = logByGoal.get(row.goal_id) ?? [];
-      bucket.push({ date: row.date, amount: row.amount });
-      logByGoal.set(row.goal_id, bucket);
-    }
     const noteRows = this.db.prepare('SELECT date_key, text FROM notes').all() as Array<{ date_key: string; text: string }>;
     const notes: Record<string, string> = {};
     for (const row of noteRows) notes[row.date_key] = row.text;
@@ -251,16 +238,6 @@ export class StateService {
         createdAt: task.created_at ?? undefined,
         deadline: task.deadline ?? '',
         priority: task.priority || 'normal',
-      })),
-      goals: goals.map((goal) => ({
-        id: goal.id,
-        title: goal.title,
-        unit: goal.unit,
-        target: goal.target,
-        dailyRate: goal.daily_rate,
-        current: goal.current,
-        log: logByGoal.get(goal.id) ?? [],
-        createdAt: goal.created_at ?? undefined,
       })),
       notes,
       theme: setting('theme') === 'light' || setting('theme') === 'dark' ? setting('theme')! : 'system',
