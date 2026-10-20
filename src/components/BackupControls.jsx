@@ -3,6 +3,7 @@ import { useAppStore } from '../store/AppStore';
 import { useAuth } from '../auth/AuthContext';
 import { createStateSnapshot } from '../api/stateApi';
 import { assertValidBackupData, normalizeState } from '../utils/schema';
+import { useFeedback } from './FeedbackContext';
 
 const STATUS_TEXT = {
   connecting: 'Подключаемся к серверу…',
@@ -14,6 +15,7 @@ const STATUS_TEXT = {
 export function BackupControls() {
   const { state, actions, syncStatus } = useAppStore();
   const { token } = useAuth();
+  const { confirm } = useFeedback();
   const [message, setMessage] = useState('');
 
   function buildBackup() {
@@ -48,7 +50,13 @@ export function BackupControls() {
       const isKnownFormat = backup?.format === 'wakanda-backup' && (backup?.version === 2 || backup?.version === 1);
       if (!isKnownFormat) throw new Error('Формат копии не распознан.');
       assertValidBackupData(data);
-      if (!window.confirm('Восстановление заменит текущие привычки и задачи данными из файла. Продолжить?')) return;
+      const confirmed = await confirm({
+        title: 'Восстановить из файла?',
+        message: 'Текущие привычки и задачи будут заменены данными из файла. Текущая версия сохранится в истории.',
+        confirmText: 'Восстановить',
+        tone: 'danger',
+      });
+      if (!confirmed) return;
       // Снимок текущего состояния на сервере — чтобы импорт можно было откатить.
       try {
         await createStateSnapshot(token, 'import');

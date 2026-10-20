@@ -13,6 +13,7 @@ import { getBadges } from '../../utils/badges';
 import { useAppStore } from '../../store/AppStore';
 import { ProgressRing } from '../ProgressRing/ProgressRing';
 import { createProgressCard, shareOrDownload } from '../../utils/shareCard';
+import { useFeedback } from '../FeedbackContext';
 
 const FULL_SCHEDULE = [0, 1, 2, 3, 4, 5, 6];
 const WEEKDAY_SHORT = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
@@ -34,6 +35,7 @@ function heatCellTitle(day) {
 
 export function StatsPage() {
   const { state } = useAppStore();
+  const { notify } = useFeedback();
   const tasks = state.tasks.filter((task) => !task.archived);
   const badges = useMemo(() => getBadges(state), [state]);
   const [monthCursor, setMonthCursor] = useState(() => {
@@ -145,7 +147,7 @@ export function StatsPage() {
       await shareOrDownload(blob, `wakanda-${year}-${String(monthIndex + 1).padStart(2, '0')}.png`, `Мой прогресс за ${monthLabel}: ${summary.percent}%`);
     } catch (error) {
       console.error('Не удалось собрать карточку прогресса:', error);
-      window.alert('Не удалось собрать картинку. Попробуйте ещё раз.');
+      notify('Не удалось собрать картинку. Попробуйте ещё раз.', { tone: 'error' });
     } finally {
       setShareBusy(false);
     }

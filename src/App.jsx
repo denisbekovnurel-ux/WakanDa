@@ -18,6 +18,8 @@ import { useAuth } from './auth/AuthContext';
 import { ensurePushSubscription, disablePushSubscription } from './utils/push';
 import { sendTestPush } from './api/pushApi';
 import { AdminPanel } from './components/Admin/AdminPanel';
+import { FeedbackViewport } from './components/Feedback';
+import { useFeedback } from './components/FeedbackContext';
 import quotes from './data/quotes.json';
 import './App.css';
 
@@ -39,6 +41,7 @@ function getPageFromHash() {
 function App() {
   const { state, actions, conflict, resolveConflict } = useAppStore();
   const { user, token, logout } = useAuth();
+  const { notify } = useFeedback();
   const isAdmin = user?.role === 'admin';
   const { tasks, oneOffTasks, theme, reminderTime, reminderEnabled } = state;
   const prefersDark = usePrefersDark();
@@ -96,7 +99,7 @@ function App() {
     if (token) {
       const result = await ensurePushSubscription(token);
       if (!result.ok && result.reason === 'unsupported') {
-        window.alert('Фоновые уведомления этот браузер не поддерживает. Пока сайт открыт, напоминание всё равно сработает.');
+        notify('Фоновые уведомления этот браузер не поддерживает. Пока сайт открыт, напоминание всё равно сработает.', { tone: 'warning' });
       }
     }
   }
@@ -105,10 +108,10 @@ function App() {
     if (!token) return;
     try {
       const result = await sendTestPush(token);
-      if (result?.sent > 0) window.alert('Тестовое уведомление отправлено — проверь шторку.');
-      else window.alert('Подписка на уведомления не найдена. Включи напоминания и разреши уведомления в браузере.');
+      if (result?.sent > 0) notify('Тестовое уведомление отправлено — проверь шторку.', { tone: 'success' });
+      else notify('Подписка на уведомления не найдена. Включи напоминания и разреши уведомления в браузере.', { tone: 'warning' });
     } catch (error) {
-      window.alert(error?.message || 'Не удалось отправить тестовое уведомление.');
+      notify(error?.message || 'Не удалось отправить тестовое уведомление.', { tone: 'error' });
     }
   }
 
@@ -172,6 +175,7 @@ function App() {
       </main>
       {conflict && <SyncConflictDialog conflict={conflict} onChoose={resolveConflict} />}
       {showPasswordDialog && <PasswordChangeDialog onClose={() => setShowPasswordDialog(false)} />}
+      <FeedbackViewport />
     </div>
   );
 }

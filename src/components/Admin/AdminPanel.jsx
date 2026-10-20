@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
+import { useFeedback } from '../FeedbackContext';
 import {
   apiAdminDeleteUser,
   apiAdminKick,
@@ -19,6 +20,7 @@ function formatDate(value) {
 
 export function AdminPanel() {
   const { token, user: me } = useAuth();
+  const { confirm, prompt, notify } = useFeedback();
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
   const [error, setError] = useState('');
@@ -57,9 +59,13 @@ export function AdminPanel() {
     try {
       if (action === 'delete') {
         const target = users.find((entry) => entry.id === id);
-        if (!window.confirm(`Удалить пользователя «${target?.username ?? ''}» вместе с его данными? Действие необратимо.`)) {
-          return;
-        }
+        const confirmed = await confirm({
+          title: 'Удалить пользователя?',
+          message: `«${target?.username ?? ''}» и все его данные будут удалены безвозвратно.`,
+          confirmText: 'Удалить',
+          tone: 'danger',
+        });
+        if (!confirmed) return;
         await apiAdminDeleteUser(token, id);
         setNotice('Пользователь удалён');
       } else if (action === 'kick') {
@@ -79,10 +85,18 @@ export function AdminPanel() {
 
   async function resetPassword(id) {
     const target = users.find((entry) => entry.id === id);
-    const password = window.prompt(`Новый пароль для «${target?.username ?? ''}» (от 6 символов).\nВсе сессии пользователя будут разорваны.`);
+    const password = await prompt({
+      title: 'Новый пароль',
+      message: `Для «${target?.username ?? ''}». Все сессии пользователя будут разорваны.`,
+      inputLabel: 'Новый пароль (от 6 символов)',
+      inputType: 'password',
+      autoComplete: 'new-password',
+      minLength: 6,
+      confirmText: 'Сбросить пароль',
+    });
     if (password == null) return;
     if (password.length < 6) {
-      setError('Пароль должен быть не короче 6 символов');
+      notify('Пароль должен быть не короче 6 символов.', { tone: 'error' });
       return;
     }
     setBusyId(id);

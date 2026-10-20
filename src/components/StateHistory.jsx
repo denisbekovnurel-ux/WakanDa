@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useAppStore } from '../store/AppStore';
 import { createStateSnapshot, fetchStateHistory, restoreStateSnapshot } from '../api/stateApi';
+import { useFeedback } from './FeedbackContext';
 
 const REASON_LABELS = {
   auto: 'Автоснимок',
@@ -31,6 +32,7 @@ function formatSize(bytes) {
 export function StateHistory() {
   const { token } = useAuth();
   const { actions } = useAppStore();
+  const { confirm } = useFeedback();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -71,7 +73,13 @@ export function StateHistory() {
   }
 
   async function restore(id) {
-    if (!window.confirm('Заменить текущие данные выбранным снимком? Текущая версия тоже сохранится в истории.')) return;
+    const confirmed = await confirm({
+      title: 'Восстановить снимок?',
+      message: 'Текущие данные будут заменены выбранным снимком. Текущая версия тоже сохранится в истории.',
+      confirmText: 'Восстановить',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
     setBusyId(id);
     setNotice('');
     try {

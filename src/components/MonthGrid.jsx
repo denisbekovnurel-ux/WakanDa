@@ -1,12 +1,14 @@
 import { useRef, useState } from 'react';
 import { getStreak, isPaused, toDateKey, STATUS } from '../utils/calc';
 import { useAppStore } from '../store/AppStore';
+import { useFeedback } from './FeedbackContext';
 
 const weekdayFormatter = new Intl.DateTimeFormat('ru-RU', { weekday: 'short' });
 const monthFormatter = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' });
 
 export function MonthGrid({ tasks }) {
   const { actions } = useAppStore();
+  const { confirm, notify } = useFeedback();
   const [month, setMonth] = useState(() => {
     const today = new Date();
     return new Date(today.getFullYear(), today.getMonth(), 1);
@@ -49,6 +51,17 @@ export function MonthGrid({ tasks }) {
   function endPress() {
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
     pressTimer.current = null;
+  }
+
+  async function archiveHabit(task) {
+    const confirmed = await confirm({
+      title: 'Переместить в архив?',
+      message: `«${task.title}» исчезнет из активных привычек, но история сохранится. Привычку можно вернуть из архива.`,
+      confirmText: 'В архив',
+    });
+    if (!confirmed) return;
+    actions.archiveHabit(task.id);
+    notify(`«${task.title}» перемещена в архив.`, { tone: 'success' });
   }
 
   return (
@@ -100,7 +113,7 @@ export function MonthGrid({ tasks }) {
                     title={`${dateKey} — ${statusLabel}`}><span>{!scheduled ? '—' : paused ? '‖' : status === STATUS.DONE ? '✓' : status === STATUS.FAILED ? '×' : ''}</span></button>;
                 })}
                 <span className="month-streak-label month-streak-value">{getStreak(task.history || {}, task.schedule || [0, 1, 2, 3, 4, 5, 6], new Date(), task.pauseRanges || [])}<small>дн.</small></span>
-                <button className="delete-btn month-delete" type="button" onClick={() => actions.archiveHabit(task.id)} aria-label={`Переместить привычку ${task.title} в архив`} title="В архив">↧</button>
+                <button className="delete-btn month-delete" type="button" onClick={() => archiveHabit(task)} aria-label={`Переместить привычку ${task.title} в архив`} title="В архив">↧</button>
               </div>
             ))}
           </div>

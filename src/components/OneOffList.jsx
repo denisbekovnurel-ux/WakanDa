@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/AppStore';
+import { useFeedback } from './FeedbackContext';
 
 const priorityRank = { high: 0, normal: 1, low: 2 };
 
@@ -27,6 +28,7 @@ function RenameOneOff({ task, actions }) {
 
 export function OneOffList({ tasks, todayKey }) {
   const { actions } = useAppStore();
+  const { confirm, notify } = useFeedback();
   const [title, setTitle] = useState('');
   const [deadline, setDeadline] = useState('');
   const [priority, setPriority] = useState('normal');
@@ -60,6 +62,18 @@ export function OneOffList({ tasks, todayKey }) {
     setPriority('normal');
   }
 
+  async function removeTask(task) {
+    const confirmed = await confirm({
+      title: 'Удалить задачу?',
+      message: `Разовая задача «${task.title}» будет удалена безвозвратно.`,
+      confirmText: 'Удалить',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
+    actions.deleteOneOff(task.id);
+    notify(`Задача «${task.title}» удалена.`, { tone: 'success' });
+  }
+
   function renderTask(task, index, group) {
     return (
       <li className={`one-off-item ${task.done ? 'one-off-item--done' : ''}`} key={task.id}>
@@ -75,7 +89,7 @@ export function OneOffList({ tasks, todayKey }) {
             <button type="button" className="order-button" disabled={index === group.length - 1} onClick={() => actions.moveOneOff(task.id, 1)} aria-label={`Опустить ${task.title}`}>↓</button>
           </span>
         )}
-        <button className="delete-btn" type="button" onClick={() => { if (window.confirm(`Удалить разовую задачу «${task.title}»?`)) actions.deleteOneOff(task.id); }} aria-label={`Удалить разовую задачу ${task.title}`}>×</button>
+        <button className="delete-btn" type="button" onClick={() => removeTask(task)} aria-label={`Удалить разовую задачу ${task.title}`}>×</button>
       </li>
     );
   }

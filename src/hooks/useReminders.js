@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { pluralize } from '../utils/pluralize';
+import { useFeedback } from '../components/FeedbackContext';
 
 const PERIODIC_SYNC_TAG = 'wakanda-daily-reminder';
 
@@ -21,6 +22,7 @@ async function registerPeriodicSync() {
  * Честно: без фоновой синхронизации уведомление приходит, только пока сайт открыт.
  */
 export function useReminders({ enabled, reminderTime, pendingHabits, todayKey }) {
+  const { notify } = useFeedback();
   useEffect(() => {
     if (!enabled) return undefined;
     function checkReminder() {
@@ -57,7 +59,7 @@ export function useReminders({ enabled, reminderTime, pendingHabits, todayKey })
 
   const enable = useCallback(async () => {
     if (!('Notification' in window)) {
-      window.alert('Этот браузер не поддерживает уведомления. Напоминание останется в заголовке сайта.');
+      notify('Этот браузер не поддерживает уведомления. Напоминание останется в заголовке сайта.', { tone: 'warning' });
       return false;
     }
     try {
@@ -66,13 +68,13 @@ export function useReminders({ enabled, reminderTime, pendingHabits, todayKey })
         registerPeriodicSync();
         return true;
       }
-      window.alert('Разреши уведомления для этого сайта в настройках браузера, чтобы получать напоминания.');
+      notify('Разреши уведомления для этого сайта в настройках браузера, чтобы получать напоминания.', { tone: 'warning' });
       return false;
     } catch {
-      window.alert('Браузер не смог запросить разрешение. Разреши уведомления в настройках сайта.');
+      notify('Браузер не смог запросить разрешение. Разреши уведомления в настройках сайта.', { tone: 'error' });
       return false;
     }
-  }, []);
+  }, [notify]);
 
   return { enable };
 }

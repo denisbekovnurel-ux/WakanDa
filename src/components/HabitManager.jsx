@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { getHabitStats, isPaused, toDateKey } from '../utils/calc';
 import { useAppStore } from '../store/AppStore';
+import { useFeedback } from './FeedbackContext';
 
 const weekdays = [
   { value: 1, label: 'ПН' }, { value: 2, label: 'ВТ' }, { value: 3, label: 'СР' },
@@ -58,10 +59,34 @@ function PauseControls({ task, today, actions }) {
 }
 
 function HabitRow({ task, today, position, count, actions }) {
+  const { confirm, notify } = useFeedback();
   const stats = getHabitStats(task, today);
   const schedule = task.schedule || [0, 1, 2, 3, 4, 5, 6];
   const bestDay = stats.mostProductiveDay === null ? 'пока нет данных' : weekdayNames[stats.mostProductiveDay];
   const pausedToday = isPaused(task, toDateKey(today));
+
+  async function removeHabit() {
+    const confirmed = await confirm({
+      title: 'Удалить привычку?',
+      message: `«${task.title}» и вся история отметок будут удалены безвозвратно. Если хочешь сохранить историю, используй «В архив».`,
+      confirmText: 'Удалить',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
+    actions.deleteHabit(task.id);
+    notify(`Привычка «${task.title}» удалена.`, { tone: 'success' });
+  }
+
+  async function archiveHabit() {
+    const confirmed = await confirm({
+      title: 'Переместить в архив?',
+      message: `«${task.title}» исчезнет из активных привычек, но история сохранится. Привычку можно вернуть из архива.`,
+      confirmText: 'В архив',
+    });
+    if (!confirmed) return;
+    actions.archiveHabit(task.id);
+    notify(`«${task.title}» перемещена в архив.`, { tone: 'success' });
+  }
 
   return (
     <li className={`managed-habit ${task.archived ? 'is-archived' : ''}`}>
@@ -70,9 +95,9 @@ function HabitRow({ task, today, position, count, actions }) {
         {weekdays.map((day) => <button key={day.value} className={schedule.includes(day.value) ? 'is-selected' : ''} type="button" onClick={() => actions.changeHabitSchedule(task.id, day.value)} aria-pressed={schedule.includes(day.value)} aria-label={`${day.label}: ${schedule.includes(day.value) ? 'по расписанию' : 'выходной'}`}>{day.label}</button>)}
       </div>}
       <div className="managed-habit-actions">
-        {!task.archived && <><button type="button" className="order-button" disabled={position === 0} onClick={() => actions.moveHabit(position, position - 1)} aria-label={`Поднять ${task.title} выше`}>↑</button><button type="button" className="order-button" disabled={position === count - 1} onClick={() => actions.moveHabit(position, position + 1)} aria-label={`Опустить ${task.title} ниже`}>↓</button><RenameHabitControls task={task} actions={actions} /><PauseControls task={task} today={today} actions={actions} /><button type="button" className="text-button" onClick={() => actions.archiveHabit(task.id)}>В архив</button></>}
+        {!task.archived && <><button type="button" className="order-button" disabled={position === 0} onClick={() => actions.moveHabit(position, position - 1)} aria-label={`Поднять ${task.title} выше`}>↑</button><button type="button" className="order-button" disabled={position === count - 1} onClick={() => actions.moveHabit(position, position + 1)} aria-label={`Опустить ${task.title} ниже`}>↓</button><RenameHabitControls task={task} actions={actions} /><PauseControls task={task} today={today} actions={actions} /><button type="button" className="text-button" onClick={archiveHabit}>В архив</button></>}
         {task.archived && <button type="button" className="text-button" onClick={() => actions.restoreHabit(task.id)}>Вернуть</button>}
-        <button type="button" className="delete-btn" onClick={() => { if (window.confirm(`Удалить «${task.title}» вместе со всей историей? Если хотите сохранить историю, используйте «В архив».`)) actions.deleteHabit(task.id); }} aria-label={`Удалить ${task.title}`}>×</button>
+        <button type="button" className="delete-btn" onClick={removeHabit} aria-label={`Удалить ${task.title}`}>×</button>
       </div>
     </li>
   );
