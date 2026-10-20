@@ -83,7 +83,9 @@ npm run dev
 | `PORT` | `3001` | Порт API |
 | `WAKANDA_ADMIN_USER` / `WAKANDA_ADMIN_PASS` | из `admin.config.ts` | Логин/пароль администратора |
 | `WAKANDA_BODY_LIMIT` | `2mb` | Лимит JSON-тела запроса |
-| `WAKANDA_CORS_ORIGINS` | `*` | Список разрешённых доменов через запятую |
+| `WAKANDA_CORS_ORIGINS` | выключен (same-origin) | Список разрешённых доменов через запятую |
+| `WAKANDA_TRUST_PROXY` | не доверять | Число хопов / `loopback` / подсети за reverse proxy |
+| `NODE_ENV` | — | `production` включает HSTS и `upgrade-insecure-requests` |
 | `WAKANDA_DATA_DIR` | `server/data` | Каталог с базой SQLite |
 | `WAKANDA_VAPID_PUBLIC` / `WAKANDA_VAPID_PRIVATE` | генерируются | Ключи для фоновых Web Push-уведомлений |
 | `WAKANDA_VAPID_SUBJECT` | `mailto:admin@wakanda.local` | Контакт для push-сервисов |
@@ -120,7 +122,8 @@ Web Push требует HTTPS (или `localhost`) и разрешения на 
 - `POST /api/auth/password` — смена своего пароля (`{ currentPassword, newPassword }`)
 - `POST /api/auth/logout-everywhere` — завершить все сессии, кроме текущей
 - `GET/PUT /api/state` — личные данные (только после одобрения). `PUT` строго валидируется
-  (некорректные данные → `400`), тело ограничено (`413` при превышении лимита).
+  (некорректные данные → `400`), тело ограничено (`413` при превышении лимита),
+  слишком частые записи → `429`.
 - `GET /api/state/history` — список серверных снимков (для отката)
 - `GET /api/state/history/:id` — снимок целиком
 - `POST /api/state/history/:id/restore` — откат к снимку
@@ -159,7 +162,7 @@ docker compose up -d --build
 npm install
 npm install --prefix server
 npm run build               # собирает dist/
-WAKANDA_ADMIN_PASS=... PORT=3001 npm --prefix server run start
+NODE_ENV=production WAKANDA_ADMIN_PASS=... PORT=3001 npm --prefix server run start
 ```
 
 Сервер сам раздаёт `dist/` (отключается через `WAKANDA_SERVE_STATIC=0`).
@@ -174,6 +177,11 @@ Railway, Fly.io) TLS уже включён. На VPS поставьте пере
 Ключи VAPID по умолчанию генерируются при первом запуске и **остаются в базе** —
 подписки не ломаются между перезапусками. Если данных жёсткий диск эфемерный,
 задайте `WAKANDA_VAPID_PUBLIC` / `WAKANDA_VAPID_PRIVATE` явно.
+
+За reverse proxy (Caddy/Nginx) обязательно задайте `WAKANDA_TRUST_PROXY` — например
+`1` или `loopback`. Без этого сервер не доверяет `X-Forwarded-For` (так безопаснее),
+но тогда все запросы выглядят как один IP прокси, и rate limit становится общим.
+`NODE_ENV=production` включает HSTS и `upgrade-insecure-requests`.
 
 ### Если фронт и API раздельно
 
@@ -192,8 +200,12 @@ SQLite не запустить. Укажите адрес API во фронте�
 - Срок активной сессии продлевается (скользящий), а просроченные сессии регулярно чистятся.
 - Ожидающие и заблокированные не получают доступ к данным.
 - Администратор единственный и защищён от удаления/блокировки/дублирования.
-- Ограничение частоты запросов: `/api/auth/login` и `/api/auth/register` — 5 в минуту с IP.
+- Ограничение частоты запросов: `/api/auth/login` и `/api/auth/register` — 5 в минуту с IP;
+  запись состояния — 30/мин, снимки и откат — 10/мин, push — 5–10/мин на пользователя.
+- Security-заголовки через `helmet`: CSP (скрипты только свои), `nosniff`,
+  `Referrer-Policy`, запрет фреймов; HSTS — в проде (`NODE_ENV=production`).
 - Серверная валидация состояния (не доверяем клиенту) и лимит размера тела запроса.
-- CORS ограничивается списком доменов через `WAKANDA_CORS_ORIGINS`.
+- CORS выключен по умолчанию (только same-origin); список доменов задаётся явно.
+- `trust proxy` не включается без настройки — нельзя подделать IP через `X-Forwarded-For`.
 - Серверные снимки состояния (до 40 на пользователя) с откатом к любой версии.
 - Ответы `/api/*` не кэшируются service worker'ом.

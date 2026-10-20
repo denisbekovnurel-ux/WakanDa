@@ -4,7 +4,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { buildHelmetOptions, parseCorsOrigins, parseTrustProxy } from './security/security.config';
 
 // Подхватываем server/.env, если он есть (логин/пароль администратора, порт).
 const envFile = join(dirname(fileURLToPath(import.meta.url)), '../.env');
@@ -38,19 +40,28 @@ function serveFrontend(app: NestExpressApplication) {
 }
 
 async function bootstrap() {
+  const isProduction = process.env.NODE_ENV === 'production';
   // Отключаем встроенный парсер, чтобы задать свой лимит, а не 100 КБ по умолчанию.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
+  // Security-заголовки ставим первыми — до раздачи статики и API.
+  app.use(helmet(buildHelmetOptions(isProduction)));
   app.useBodyParser('json', { limit: BODY_LIMIT });
   app.useBodyParser('urlencoded', { extended: true, limit: BODY_LIMIT });
-  // Ограничиваем CORS явным списком доменов, если он задан; иначе — как раньше.
-  const corsOrigins = (process.env.WAKANDA_CORS_ORIGINS || '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-  app.enableCors({ origin: corsOrigins.length ? corsOrigins : true, credentials: true });
-  // За прокси/хостингом реальный IP приходит в заголовках — нужно для rate limit.
+  // CORS только по явному списку. Без него разрешены лишь same-origin запросы —
+  // так безопаснее по умолчанию, чем отражать любой Origin.
+  const corsOrigins = parseCorsOrigins(process.env.WAKANDA_CORS_ORIGINS);
+  if (corsOrigins) {
+    app.enableCors({ origin: corsOrigins, credentials: true });
+  }
+  // Реальный IP за прокси нужен для rate limit, но доверять хопам вслепую нельзя:
+  // X-Forwarded-For подделывается, если прокси не наш.
+  const trustProxy = parseTrustProxy(process.env.WAKANDA_TRUST_PROXY);
   const expressInstance = app.getHttpAdapter().getInstance() as { set?: (key: string, value: unknown) => void };
-  expressInstance?.set?.('trust proxy', 1);
+  if (trustProxy !== false) expressInstance?.set?.('trust proxy', trustProxy);
+  console.log(
+    `WakanDa: CORS ${corsOrigins ? corsOrigins.join(', ') : 'только same-origin'}; `
+      + `trust proxy ${trustProxy === false ? 'выключен' : trustProxy}`,
+  );
   app.setGlobalPrefix('api');
   app.enableShutdownHooks();
   serveFrontend(app);

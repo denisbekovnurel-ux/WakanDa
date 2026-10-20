@@ -25,6 +25,9 @@ services:
       WAKANDA_VAPID_PUBLIC: ${WAKANDA_VAPID_PUBLIC:-}
       WAKANDA_VAPID_PRIVATE: ${WAKANDA_VAPID_PRIVATE:-}
       WAKANDA_VAPID_SUBJECT: ${WAKANDA_VAPID_SUBJECT:-mailto:admin@wakanda.local}
+      # Если перед контейнером стоит reverse proxy — укажите число хопов
+      # (обычно 1) или подсети, иначе rate limit увидит IP прокси.
+      WAKANDA_TRUST_PROXY: ${WAKANDA_TRUST_PROXY:-}
     volumes:
       - wakanda-data:/data
 

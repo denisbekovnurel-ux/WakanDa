@@ -25,11 +25,12 @@ function check(name, condition, extra = '') {
   }
 }
 
-async function req(path, { method = 'GET', token, body } = {}) {
+async function req(path, { method = 'GET', token, body, origin } = {}) {
   const res = await fetch(API + path, {
     method,
     headers: {
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      ...(origin ? { Origin: origin } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -40,7 +41,7 @@ async function req(path, { method = 'GET', token, body } = {}) {
   } catch {
     // пустое тело
   }
-  return { status: res.status, data };
+  return { status: res.status, data, headers: res.headers };
 }
 
 async function waitForServer() {
@@ -61,6 +62,10 @@ const child = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts'], {
     WAKANDA_DATA_DIR: dataDir,
     WAKANDA_ADMIN_USER: ADMIN_USER,
     WAKANDA_ADMIN_PASS: ADMIN_PASS,
+    // Явно закрываем CORS и не доверяем прокси: тесты должны быть
+    // детерминированными даже если эти переменные заданы в оболочке.
+    WAKANDA_CORS_ORIGINS: '',
+    WAKANDA_TRUST_PROXY: '',
     NODE_ENV: 'test',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -83,6 +88,17 @@ const username = `e2e_${run}`;
 async function main() {
   await waitForServer();
   check('health endpoint responds ok', true);
+
+  const security = await req('/health');
+  const csp = security.headers.get('content-security-policy') ?? '';
+  check('security headers: nosniff', security.headers.get('x-content-type-options') === 'nosniff');
+  check('security headers: CSP present', csp.includes("default-src 'self'") && csp.includes("script-src 'self'"), csp);
+  check('security headers: framing denied', csp.includes("frame-ancestors 'none'"), csp);
+  check('security headers: referrer policy', security.headers.get('referrer-policy') === 'strict-origin-when-cross-origin');
+  check('security headers: x-powered-by hidden', !security.headers.get('x-powered-by'));
+
+  const corsProbe = await req('/health', { origin: 'https://evil.example' });
+  check('CORS closed by default (no reflected origin)', !corsProbe.headers.get('access-control-allow-origin'));
 
   const admin = await req('/auth/login', { method: 'POST', body: { username: ADMIN_USER, password: ADMIN_PASS } });
   check('admin login', admin.status === 200 || admin.status === 201, JSON.stringify(admin.data));
@@ -205,6 +221,22 @@ async function main() {
 
   const foreign = await req(`/state/history/${newest?.id}`, { token: adminToken });
   check('foreign snapshot not readable (404)', foreign.status === 404, String(foreign.status));
+
+  // Per-user лимит на запись: 10 снимков в минуту, 11-й должен получить 429.
+  // userToken2 ещё не делал snapshot-запросов, поэтому счёт начинается с нуля.
+  let rateLimited = false;
+  for (let i = 0; i < 12; i += 1) {
+    const burst = await req('/state/snapshot', {
+      method: 'POST',
+      token: userToken2,
+      body: { reason: 'manual' },
+    });
+    if (burst.status === 429) {
+      rateLimited = true;
+      break;
+    }
+  }
+  check('write rate limit returns 429 after burst', rateLimited);
 
   const del = await req(`/admin/users/${userId}`, { method: 'DELETE', token: adminToken });
   check('cleanup delete test user', del.status === 200, JSON.stringify(del.data));

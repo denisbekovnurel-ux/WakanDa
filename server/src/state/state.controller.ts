@@ -1,11 +1,15 @@
 import { Body, Controller, ForbiddenException, Get, Inject, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { AppState, SnapshotReason, StateService } from './state.service';
 import { AuthGuard, AuthedRequest } from '../auth/auth.guard';
+import { userOrIpTracker } from '../security/rate-limit';
 
 type SnapshotBody = { reason?: unknown };
 
+// Лимит на запись: автосохранение шлёт PUT после паузы в наборе, поэтому 30/мин
+// с запасом покрывает обычную работу, но не позволяет заливать 2 МБ непрерывно.
 @Controller('state')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, ThrottlerGuard)
 export class StateController {
   constructor(@Inject(StateService) private readonly state: StateService) {}
 
@@ -23,6 +27,7 @@ export class StateController {
     return { state, updatedAt: this.state.updatedAtForUser(req.user!.id) };
   }
 
+  @Throttle({ default: { limit: 30, ttl: 60_000, getTracker: userOrIpTracker } })
   @Put()
   save(@Req() req: AuthedRequest, @Body() body: AppState) {
     this.ensureApproved(req);
@@ -43,6 +48,7 @@ export class StateController {
     return { ...meta, state };
   }
 
+  @Throttle({ default: { limit: 10, ttl: 60_000, getTracker: userOrIpTracker } })
   @Post('history/:id/restore')
   restore(@Req() req: AuthedRequest, @Param('id') id: string) {
     this.ensureApproved(req);
@@ -50,6 +56,7 @@ export class StateController {
   }
 
   // Принудительный снимок текущего состояния — клиент вызывает перед импортом бэкапа.
+  @Throttle({ default: { limit: 10, ttl: 60_000, getTracker: userOrIpTracker } })
   @Post('snapshot')
   snapshot(@Req() req: AuthedRequest, @Body() body: SnapshotBody) {
     this.ensureApproved(req);
