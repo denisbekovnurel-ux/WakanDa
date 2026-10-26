@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/AppStore';
+import { useToday } from '../hooks/TodayContext';
 import { useFeedback } from './FeedbackContext';
 
 const priorityRank = { high: 0, normal: 1, low: 2 };
 
-function RenameOneOff({ task, actions }) {
+function RenameOneOff({ task }) {
+  const { actions } = useAppStore();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(task.title);
 
@@ -26,8 +28,10 @@ function RenameOneOff({ task, actions }) {
   );
 }
 
-export function OneOffList({ tasks, todayKey }) {
-  const { actions } = useAppStore();
+export function OneOffList() {
+  const { state, actions } = useAppStore();
+  const { todayKey } = useToday();
+  const tasks = state.oneOffTasks;
   const { confirm, notify } = useFeedback();
   const [title, setTitle] = useState('');
   const [deadline, setDeadline] = useState('');
@@ -82,7 +86,7 @@ export function OneOffList({ tasks, todayKey }) {
         {task.priority && <span className={`one-off-priority one-off-priority--${task.priority}`}>{task.priority === 'high' ? 'ВЫСОКИЙ' : task.priority === 'low' ? 'НИЗКИЙ' : 'ОБЫЧНЫЙ'}</span>}
         {task.deadline && <time className={`one-off-deadline ${!task.done && task.deadline < todayKey ? 'is-overdue' : ''}`} dateTime={task.deadline}>{task.deadline < todayKey && !task.done ? 'ПРОСРОЧЕНО · ' : 'ДО · '}{task.deadline}</time>}
         {task.done && <span className="one-off-complete-label">ЗАКРЫТА</span>}
-        {!task.done && <RenameOneOff task={task} actions={actions} />}
+        {!task.done && <RenameOneOff task={task} />}
         {!task.done && sortMode === 'manual' && filter === 'all' && (
           <span className="order-buttons">
             <button type="button" className="order-button" disabled={index === 0} onClick={() => actions.moveOneOff(task.id, -1)} aria-label={`Поднять ${task.title}`}>↑</button>

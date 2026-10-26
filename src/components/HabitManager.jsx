@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { getHabitStats, isPaused, toDateKey } from '../utils/calc';
+import { getHabitStats, isPaused } from '../utils/calc';
 import { useAppStore } from '../store/AppStore';
+import { useToday } from '../hooks/TodayContext';
 import { useFeedback } from './FeedbackContext';
 
 const weekdays = [
@@ -9,7 +10,8 @@ const weekdays = [
 ];
 const weekdayNames = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
 
-function RenameHabitControls({ task, actions }) {
+function RenameHabitControls({ task }) {
+  const { actions } = useAppStore();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(task.title);
 
@@ -31,10 +33,12 @@ function RenameHabitControls({ task, actions }) {
   );
 }
 
-function PauseControls({ task, today, actions }) {
+function PauseControls({ task }) {
+  const { actions } = useAppStore();
+  const { todayKey } = useToday();
   const [open, setOpen] = useState(false);
-  const [from, setFrom] = useState(toDateKey(today));
-  const [to, setTo] = useState(toDateKey(today));
+  const [from, setFrom] = useState(todayKey);
+  const [to, setTo] = useState(todayKey);
   const ranges = task.pauseRanges || [];
 
   function submit(event) {
@@ -58,12 +62,14 @@ function PauseControls({ task, today, actions }) {
   );
 }
 
-function HabitRow({ task, today, position, count, actions }) {
+function HabitRow({ task, position, count }) {
+  const { actions } = useAppStore();
+  const { today, todayKey } = useToday();
   const { confirm, notify } = useFeedback();
   const stats = getHabitStats(task, today);
   const schedule = task.schedule || [0, 1, 2, 3, 4, 5, 6];
   const bestDay = stats.mostProductiveDay === null ? 'пока нет данных' : weekdayNames[stats.mostProductiveDay];
-  const pausedToday = isPaused(task, toDateKey(today));
+  const pausedToday = isPaused(task, todayKey);
 
   async function removeHabit() {
     const confirmed = await confirm({
@@ -95,7 +101,7 @@ function HabitRow({ task, today, position, count, actions }) {
         {weekdays.map((day) => <button key={day.value} className={schedule.includes(day.value) ? 'is-selected' : ''} type="button" onClick={() => actions.changeHabitSchedule(task.id, day.value)} aria-pressed={schedule.includes(day.value)} aria-label={`${day.label}: ${schedule.includes(day.value) ? 'по расписанию' : 'выходной'}`}>{day.label}</button>)}
       </div>}
       <div className="managed-habit-actions">
-        {!task.archived && <><button type="button" className="order-button" disabled={position === 0} onClick={() => actions.moveHabit(position, position - 1)} aria-label={`Поднять ${task.title} выше`}>↑</button><button type="button" className="order-button" disabled={position === count - 1} onClick={() => actions.moveHabit(position, position + 1)} aria-label={`Опустить ${task.title} ниже`}>↓</button><RenameHabitControls task={task} actions={actions} /><PauseControls task={task} today={today} actions={actions} /><button type="button" className="text-button" onClick={archiveHabit}>В архив</button></>}
+        {!task.archived && <><button type="button" className="order-button" disabled={position === 0} onClick={() => actions.moveHabit(position, position - 1)} aria-label={`Поднять ${task.title} выше`}>↑</button><button type="button" className="order-button" disabled={position === count - 1} onClick={() => actions.moveHabit(position, position + 1)} aria-label={`Опустить ${task.title} ниже`}>↓</button><RenameHabitControls task={task} /><PauseControls task={task} /><button type="button" className="text-button" onClick={archiveHabit}>В архив</button></>}
         {task.archived && <button type="button" className="text-button" onClick={() => actions.restoreHabit(task.id)}>Вернуть</button>}
         <button type="button" className="delete-btn" onClick={removeHabit} aria-label={`Удалить ${task.title}`}>×</button>
       </div>
@@ -103,8 +109,9 @@ function HabitRow({ task, today, position, count, actions }) {
   );
 }
 
-export function HabitManager({ tasks, today }) {
-  const { actions } = useAppStore();
+export function HabitManager() {
+  const { state, actions } = useAppStore();
+  const tasks = state.tasks;
   const [title, setTitle] = useState('');
   const [schedule, setSchedule] = useState([0, 1, 2, 3, 4, 5, 6]);
   const [formError, setFormError] = useState('');
@@ -143,10 +150,10 @@ export function HabitManager({ tasks, today }) {
       </form>
 
       <section className="habit-roster" aria-label="Активные привычки">
-        {activeTasks.length ? <ul>{activeTasks.map((task, index) => <HabitRow key={task.id} task={task} today={today} position={index} count={activeTasks.length} actions={actions} />)}</ul> : <p className="one-off-empty">Добавь первую привычку и выбери дни для неё.</p>}
+        {activeTasks.length ? <ul>{activeTasks.map((task, index) => <HabitRow key={task.id} task={task} position={index} count={activeTasks.length} />)}</ul> : <p className="one-off-empty">Добавь первую привычку и выбери дни для неё.</p>}
       </section>
 
-      <details className="habit-archive"><summary>Архив привычек <span>{archivedTasks.length}</span></summary>{archivedTasks.length ? <ul>{archivedTasks.map((task) => <HabitRow key={task.id} task={task} today={today} position={0} count={0} actions={actions} />)}</ul> : <p>Архивированных привычек пока нет.</p>}</details>
+      <details className="habit-archive"><summary>Архив привычек <span>{archivedTasks.length}</span></summary>{archivedTasks.length ? <ul>{archivedTasks.map((task) => <HabitRow key={task.id} task={task} position={0} count={0} />)}</ul> : <p>Архивированных привычек пока нет.</p>}</details>
     </div>
   );
 }

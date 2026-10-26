@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useToday } from '../../hooks/useToday';
+import { useToday } from '../../hooks/TodayContext';
 import {
   buildDayPercent,
   getBestStreak,

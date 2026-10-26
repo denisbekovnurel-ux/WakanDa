@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { getStreak, isPaused, toDateKey, STATUS } from '../utils/calc';
-import { useToday } from '../hooks/useToday';
+import { useToday } from '../hooks/TodayContext';
 import { useAppStore } from '../store/AppStore';
+import { selectActiveHabits } from '../store/selectors';
 import { useFeedback } from './FeedbackContext';
 import { TIMINGS } from '../config/timings';
 
 const weekdayFormatter = new Intl.DateTimeFormat('ru-RU', { weekday: 'short' });
 const monthFormatter = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' });
 
-export function MonthGrid({ tasks }) {
-  const { actions } = useAppStore();
+export function MonthGrid() {
+  const { state, actions } = useAppStore();
+  const tasks = selectActiveHabits(state);
   const { confirm, notify } = useFeedback();
   const { today, todayKey } = useToday();
   const [month, setMonth] = useState(() => {

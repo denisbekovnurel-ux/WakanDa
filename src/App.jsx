@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useToday } from './hooks/useToday';
+import { useToday } from './hooks/TodayContext';
 import { usePrefersDark } from './hooks/usePrefersDark';
 import { useAppStore } from './store/AppStore';
+import { selectActiveHabits } from './store/selectors';
 import { useReminders } from './hooks/useReminders';
 import { pluralize } from './utils/pluralize';
 import { isPaused } from './utils/calc';
@@ -45,7 +46,7 @@ function App() {
   const { user, token, logout } = useAuth();
   const { notify } = useFeedback();
   const isAdmin = user?.role === 'admin';
-  const { tasks, oneOffTasks, theme, reminderTime, reminderEnabled } = state;
+  const { oneOffTasks, theme, reminderTime, reminderEnabled } = state;
   const prefersDark = usePrefersDark();
   // «system» — следуем системной теме, иначе берём явный выбор пользователя.
   const effectiveTheme = theme === 'system' ? (prefersDark ? 'dark' : 'light') : theme;
@@ -57,7 +58,7 @@ function App() {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [quoteIndex, setQuoteIndex] = useState(() => Math.floor(Math.random() * quotes.length));
   const { today, todayKey } = useToday();
-  const activeTasks = tasks.filter((task) => !task.archived);
+  const activeTasks = selectActiveHabits(state);
   const completedToday = activeTasks.filter((task) => task.history?.[todayKey] === 'done').length;
   // Не напоминаем о привычках, которые сегодня не по расписанию, на паузе
   // или ещё не существовали: счётчик в уведомлении должен быть честным.
@@ -189,9 +190,9 @@ function App() {
           </>
         )}
 
-        {page === 'daily' && <section className="section-card page-section"><MonthGrid tasks={activeTasks} /><NotesPanel /><div className="daily-task-manager"><div className="section-heading"><div><p className="eyebrow">ДИСЦИПЛИНА КАЖДЫЙ ДЕНЬ</p><h2>Управление привычками</h2></div><span className="section-count">{activeTasks.length} {pluralize(activeTasks.length, 'привычка', 'привычки', 'привычек')}</span></div><HabitManager tasks={tasks} today={today} /></div></section>}
+        {page === 'daily' && <section className="section-card page-section"><MonthGrid /><NotesPanel /><div className="daily-task-manager"><div className="section-heading"><div><p className="eyebrow">ДИСЦИПЛИНА КАЖДЫЙ ДЕНЬ</p><h2>Управление привычками</h2></div><span className="section-count">{activeTasks.length} {pluralize(activeTasks.length, 'привычка', 'привычки', 'привычек')}</span></div><HabitManager /></div></section>}
 
-        {page === 'oneoff' && <section className="section-card page-section"><div className="section-heading"><div><p className="eyebrow">ОДИН РАЗ — НО ДО КОНЦА</p><h2>Список действий</h2></div><span className="section-count">{oneOffTasks.filter((task) => !task.done).length} открыто</span></div><p className="section-description">Небольшие дела тоже требуют решения. Закрывай их одно за другим.</p><OneOffList tasks={oneOffTasks} todayKey={todayKey} /></section>}
+        {page === 'oneoff' && <section className="section-card page-section"><div className="section-heading"><div><p className="eyebrow">ОДИН РАЗ — НО ДО КОНЦА</p><h2>Список действий</h2></div><span className="section-count">{oneOffTasks.filter((task) => !task.done).length} открыто</span></div><p className="section-description">Небольшие дела тоже требуют решения. Закрывай их одно за другим.</p><OneOffList /></section>}
 
         {page === 'stats' && <StatsPage />}
 
