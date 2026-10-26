@@ -73,15 +73,16 @@ npm run dev
 (скопируй из `server/.env.example`) и перезапусти сервер. Логин меняется так же —
 переменной `WAKANDA_ADMIN_USER`.
 
-⚠️ Без `WAKANDA_ADMIN_PASS` используется пароль по умолчанию из репозитория — сервер
-предупреждает об этом в консоли. На проде обязательно задайте свой пароль.
+⚠️ Без `WAKANDA_ADMIN_PASS` пароль администратора генерируется случайно и
+записывается в `server/data/admin-credentials.txt` (в консоль выводится только
+вне production). На проде обязательно задайте свой пароль.
 
 ## Настройки сервера (`server/.env`)
 
 | Переменная | По умолчанию | Назначение |
 | --- | --- | --- |
 | `PORT` | `3001` | Порт API |
-| `WAKANDA_ADMIN_USER` / `WAKANDA_ADMIN_PASS` | из `admin.config.ts` | Логин/пароль администратора |
+| `WAKANDA_ADMIN_USER` / `WAKANDA_ADMIN_PASS` | случайный пароль в `admin-credentials.txt` | Логин/пароль администратора |
 | `WAKANDA_BODY_LIMIT` | `2mb` | Лимит JSON-тела запроса |
 | `WAKANDA_CORS_ORIGINS` | выключен (same-origin) | Список разрешённых доменов через запятую |
 | `WAKANDA_TRUST_PROXY` | не доверять | Число хопов / `loopback` / подсети за reverse proxy |
@@ -143,8 +144,8 @@ Web Push требует HTTPS (или `localhost`) и разрешения на 
 тогда CORS не нужен, а куки/уведомления работают без ограничений.
 
 ⚠️ **Вход админа.** Перед публикацией обязательно задайте свой `WAKANDA_ADMIN_PASS`
-(иначе используется пароль по умолчанию из репозитория). Логин — `WAKANDA_ADMIN_USER`
-(по умолчанию `waka_admin`).
+(иначе пароль сгенерируется случайно и попадёт в `server/data/admin-credentials.txt`).
+Логин — `WAKANDA_ADMIN_USER` (по умолчанию `waka_admin`).
 
 ### Через Docker (проще всего)
 

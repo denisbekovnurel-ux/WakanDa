@@ -14,6 +14,9 @@ async function parse(response, fallbackMessage) {
   if (!response.ok) {
     const error = new Error(data?.message || `${fallbackMessage} (${response.status})`);
     error.status = response.status;
+    // 409 присылает актуальное серверное состояние и revision — без этого
+    // клиент не сможет показать конфликт и разрешить его.
+    error.data = data;
     throw error;
   }
   return data;
@@ -22,16 +25,26 @@ async function parse(response, fallbackMessage) {
 export async function fetchServerState(token) {
   const response = await fetch(`${API}/state`, { headers: authHeaders(token) });
   const data = await parse(response, 'Не удалось загрузить данные');
-  // Новый формат — { state, updatedAt }. Старый (просто состояние) тоже поддерживаем.
-  if (data && typeof data === 'object' && 'state' in data) return data;
-  return { state: data, updatedAt: null };
+  // Новый формат — { state, updatedAt, revision }. Старый (просто состояние)
+  // тоже поддерживаем: revision 0, обновление произойдёт при первой записи.
+  if (data && typeof data === 'object' && 'state' in data) {
+    return {
+      state: data.state,
+      updatedAt: data.updatedAt ?? null,
+      revision: Number.isInteger(data.revision) ? data.revision : 0,
+    };
+  }
+  return { state: data, updatedAt: null, revision: 0 };
 }
 
-export async function saveServerState(token, state) {
+export async function saveServerState(token, state, baseRevision) {
   const response = await fetch(`${API}/state`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
-    body: JSON.stringify(state),
+    body: JSON.stringify({
+      state,
+      baseRevision: Number.isInteger(baseRevision) ? baseRevision : null,
+    }),
   });
   return parse(response, 'Не удалось сохранить данные');
 }
@@ -59,5 +72,17 @@ export async function createStateSnapshot(token, reason = 'manual') {
 }
 
 export function isEmptyAppState(state) {
-  return !state.tasks.length && !state.oneOffTasks.length && Object.keys(state.notes).length === 0;
+  if (!state) return true;
+  // «Пусто» — это действительно состояние по умолчанию, а не «нет задач».
+  // Иначе аккаунт с одними настройками (тема/напоминание) считался бы пустым
+  // и его настройки затирались бы при первом входе с другого устройства.
+  return (
+    !state.tasks.length &&
+    !state.oneOffTasks.length &&
+    Object.keys(state.notes).length === 0 &&
+    state.theme === 'system' &&
+    state.reminderTime === '20:00' &&
+    !state.reminderEnabled &&
+    !state.lastAutoBackupAt
+  );
 }

@@ -62,8 +62,9 @@ export function loadState(userId = '') {
       const raw = localStorage.getItem(STORE_KEY);
       if (raw !== null) {
         const normalized = normalizeState(JSON.parse(raw));
-        saveState(normalized, userId);
-        localStorage.removeItem(STORE_KEY);
+        // Удаляем старый ключ только после успешной записи per-user копии:
+        // при переполнении localStorage иначе данные потерялись бы навсегда.
+        if (saveState(normalized, userId)) localStorage.removeItem(STORE_KEY);
         return normalized;
       }
     } catch (error) {
@@ -74,8 +75,9 @@ export function loadState(userId = '') {
   const legacy = readLegacyState();
   if (legacy) {
     const migrated = normalizeState(legacy);
-    saveState(migrated, userId);
-    for (const key of Object.values(LEGACY_KEYS)) localStorage.removeItem(key);
+    if (saveState(migrated, userId)) {
+      for (const key of Object.values(LEGACY_KEYS)) localStorage.removeItem(key);
+    }
     return migrated;
   }
 
@@ -85,8 +87,10 @@ export function loadState(userId = '') {
 export function saveState(state, userId = '') {
   try {
     localStorage.setItem(stateKey(userId), JSON.stringify(state));
+    return true;
   } catch (error) {
     console.error('Не удалось сохранить состояние:', error);
+    return false;
   }
 }
 
@@ -95,7 +99,8 @@ export function saveState(state, userId = '') {
  * сделанные оффлайн, и уметь отличить «локальное новее» от конфликта.
  *   dirty             — есть ли несинхронизированные локальные изменения;
  *   lastLocalChangeAt — когда пользователь последний раз менял данные;
- *   lastSyncedAt      — время последней успешной синхронизации с сервером.
+ *   lastSyncedAt      — время последней успешной синхронизации с сервером;
+ *   revision          — версия серверного состояния, на которой основаны правки.
  */
 export function loadSyncMeta(userId = '') {
   try {
@@ -106,12 +111,13 @@ export function loadSyncMeta(userId = '') {
         dirty: Boolean(parsed?.dirty),
         lastLocalChangeAt: typeof parsed?.lastLocalChangeAt === 'string' ? parsed.lastLocalChangeAt : null,
         lastSyncedAt: typeof parsed?.lastSyncedAt === 'string' ? parsed.lastSyncedAt : null,
+        revision: Number.isInteger(parsed?.revision) && parsed.revision >= 0 ? parsed.revision : 0,
       };
     }
   } catch (error) {
     console.error('Не удалось прочитать метаданные синхронизации:', error);
   }
-  return { dirty: false, lastLocalChangeAt: null, lastSyncedAt: null };
+  return { dirty: false, lastLocalChangeAt: null, lastSyncedAt: null, revision: 0 };
 }
 
 export function saveSyncMeta(userId, meta) {

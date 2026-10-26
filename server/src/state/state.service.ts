@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import Database from 'better-sqlite3';
 import { DatabaseService } from '../database/database.service';
 import { AppState, DEFAULT_STATE, HabitStatus, StateValidationError, sanitizeAppState } from './state.schema';
@@ -12,6 +12,11 @@ const HISTORY_LIMIT = 40;
 const AUTO_SNAPSHOT_INTERVAL_MS = 10 * 60 * 1000;
 
 export type SnapshotReason = 'auto' | 'manual' | 'import' | 'restore';
+
+export type StateMeta = {
+  updatedAt: string | null;
+  revision: number;
+};
 
 export type SnapshotMeta = {
   id: number;
@@ -46,35 +51,58 @@ export class StateService {
         }
       }
     }
-    return { ...DEFAULT_STATE };
+    return this.emptyState();
+  }
+
+  metaForUser(userId: string): StateMeta {
+    const row = this.db.prepare('SELECT updated_at, revision FROM user_state WHERE user_id = ?').get(userId) as
+      | { updated_at: string; revision: number }
+      | undefined;
+    return { updatedAt: row?.updated_at ?? null, revision: row?.revision ?? 0 };
   }
 
   // Сохраняет состояние, предварительно строго его проверив, и делает снимок
   // предыдущей версии (с ротацией), чтобы данные можно было откатить.
-  saveForUser(userId: string, input: unknown): AppState {
+  //
+  // baseRevision — версия, которую клиент последний раз видел. Если на сервере
+  // уже новее (другая вкладка/устройство), возвращаем 409 с актуальными данными,
+  // а не молча затираем чужие правки.
+  saveForUser(userId: string, input: unknown, baseRevision?: number | null): AppState {
     const state = this.sanitize(input);
-    const previous = this.db.prepare('SELECT data FROM user_state WHERE user_id = ?').get(userId) as
-      | { data: string }
+    const previous = this.db.prepare('SELECT data, updated_at, revision FROM user_state WHERE user_id = ?').get(userId) as
+      | { data: string; updated_at: string; revision: number }
       | undefined;
-    if (previous?.data) this.snapshot(userId, previous.data, 'auto');
-    this.writeUserState(userId, state);
+    const currentRevision = previous?.revision ?? 0;
+    if (baseRevision !== undefined && baseRevision !== null && baseRevision !== currentRevision) {
+      throw new ConflictException({
+        message: 'Данные уже изменились на другом устройстве',
+        state: previous?.data ? this.parseState(previous.data) : this.emptyState(),
+        updatedAt: previous?.updated_at ?? null,
+        revision: currentRevision,
+      });
+    }
+    const write = this.db.transaction(() => {
+      if (previous?.data) this.snapshot(userId, previous.data, 'auto');
+      this.writeUserState(userId, state);
+    });
+    write();
     return state;
-  }
-
-  updatedAtForUser(userId: string): string | null {
-    const row = this.db.prepare('SELECT updated_at FROM user_state WHERE user_id = ?').get(userId) as
-      | { updated_at: string }
-      | undefined;
-    return row?.updated_at ?? null;
   }
 
   private writeUserState(userId: string, state: AppState) {
     this.db
       .prepare(
-        `INSERT INTO user_state (user_id, data, updated_at) VALUES (?, ?, ?)
-         ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+        `INSERT INTO user_state (user_id, data, updated_at, revision) VALUES (?, ?, ?, 1)
+         ON CONFLICT(user_id) DO UPDATE SET
+           data = excluded.data,
+           updated_at = excluded.updated_at,
+           revision = user_state.revision + 1`,
       )
       .run(userId, JSON.stringify(state), new Date().toISOString());
+  }
+
+  private emptyState(): AppState {
+    return { ...DEFAULT_STATE, tasks: [], oneOffTasks: [], notes: {} };
   }
 
   private sanitize(input: unknown): AppState {
@@ -90,7 +118,7 @@ export class StateService {
     try {
       return sanitizeAppState(JSON.parse(data));
     } catch {
-      return { ...DEFAULT_STATE };
+      return this.emptyState();
     }
   }
 
@@ -176,8 +204,11 @@ export class StateService {
     const current = this.db.prepare('SELECT data FROM user_state WHERE user_id = ?').get(userId) as
       | { data: string }
       | undefined;
-    if (current?.data) this.snapshot(userId, current.data, 'restore');
-    this.writeUserState(userId, entry.state);
+    const restore = this.db.transaction(() => {
+      if (current?.data) this.snapshot(userId, current.data, 'restore');
+      this.writeUserState(userId, entry.state);
+    });
+    restore();
     return entry.state;
   }
 

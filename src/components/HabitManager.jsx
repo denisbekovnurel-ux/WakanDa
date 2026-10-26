@@ -107,25 +107,38 @@ export function HabitManager({ tasks, today }) {
   const { actions } = useAppStore();
   const [title, setTitle] = useState('');
   const [schedule, setSchedule] = useState([0, 1, 2, 3, 4, 5, 6]);
+  const [formError, setFormError] = useState('');
   const activeTasks = tasks.filter((task) => !task.archived);
   const archivedTasks = tasks.filter((task) => task.archived);
 
   function toggleDay(day) {
+    setFormError('');
     setSchedule((current) => current.includes(day) ? current.filter((value) => value !== day) : [...current, day]);
   }
 
   function handleSubmit(event) {
     event.preventDefault();
     const trimmedTitle = title.trim();
-    if (!trimmedTitle || schedule.length === 0) return;
+    // Раньше форма просто закрывалась: привычка не создавалась, а человек
+    // решал, что всё нажатое потерялось.
+    if (!trimmedTitle) {
+      setFormError('Укажи название привычки.');
+      return;
+    }
+    if (schedule.length === 0) {
+      setFormError('Выбери хотя бы один день выполнения.');
+      return;
+    }
+    setFormError('');
     actions.addHabit(trimmedTitle, weekdays.filter((day) => schedule.includes(day.value)).map((day) => day.value));
     setTitle('');
   }
 
   return (
     <div className="habit-manager">
-      <form className="habit-add-form" onSubmit={handleSubmit}>
-        <div className="habit-add-row"><label className="sr-only" htmlFor="habit-title">Название привычки</label><input id="habit-title" type="text" maxLength="80" placeholder="Например, утренняя тренировка" value={title} onChange={(event) => setTitle(event.target.value)} required /><button className="button button--red" type="submit">Добавить привычку</button></div>
+      <form className="habit-add-form" onSubmit={handleSubmit} noValidate>
+        <div className="habit-add-row"><label className="sr-only" htmlFor="habit-title">Название привычки</label><input id="habit-title" type="text" maxLength="80" placeholder="Например, утренняя тренировка" value={title} onChange={(event) => { setFormError(''); setTitle(event.target.value); }} required /><button className="button button--red" type="submit">Добавить привычку</button></div>
+        {formError && <p className="backup-message" role="alert">{formError}</p>}
         <div className="habit-schedule-create"><span>Дни выполнения</span><div className="schedule-pills" role="group" aria-label="Дни выполнения новой привычки">{weekdays.map((day) => <button key={day.value} type="button" className={schedule.includes(day.value) ? 'is-selected' : ''} onClick={() => toggleDay(day.value)} aria-pressed={schedule.includes(day.value)}>{day.label}</button>)}</div><span className="schedule-hint">Выходные не прерывают серию</span></div>
       </form>
 

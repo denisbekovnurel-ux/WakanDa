@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { pluralize } from '../utils/pluralize';
 
 function summarize(state) {
@@ -24,11 +24,22 @@ function VersionCard({ title, hint, items, action, busy, onChoose }) {
 
 export function SyncConflictDialog({ conflict, onChoose }) {
   const [busy, setBusy] = useState(null);
+  const [error, setError] = useState('');
+  const dialogRef = useRef(null);
+
+  // Клавиатурный фокус должен попадать в диалог. Escape намеренно не закрывает
+  // окно: выбор обязателен, иначе автосохранение так и останется заблокировано.
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
 
   async function choose(which) {
     setBusy(which);
+    setError('');
     try {
       await onChoose(which);
+    } catch (err) {
+      setError(err?.message || 'Не удалось разрешить конфликт. Попробуй ещё раз.');
     } finally {
       setBusy(null);
     }
@@ -36,7 +47,7 @@ export function SyncConflictDialog({ conflict, onChoose }) {
 
   return (
     <div className="sync-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="sync-dialog-title">
-      <div className="sync-dialog">
+      <div className="sync-dialog" ref={dialogRef} tabIndex={-1} style={{ outline: 'none' }}>
         <p className="eyebrow">КОНФЛИКТ СИНХРОНИЗАЦИИ</p>
         <h2 id="sync-dialog-title">Есть две версии данных</h2>
         <p className="section-description">
@@ -44,6 +55,7 @@ export function SyncConflictDialog({ conflict, onChoose }) {
           Выбери, какую версию оставить. Неиспользованная версия пропадёт, поэтому при сомнениях
           сначала скачай резервную копию.
         </p>
+        {error && <p className="backup-message" role="alert">{error}</p>}
         <div className="sync-versions">
           <VersionCard
             title="Мои изменения"

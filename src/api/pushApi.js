@@ -24,11 +24,11 @@ export async function fetchPushKey() {
   return parse(response, 'Не удалось получить ключ уведомлений');
 }
 
-export async function subscribePush(token, subscription, timezoneOffset) {
+export async function subscribePush(token, subscription, timezoneOffset, deviceId) {
   const response = await fetch(`${API}/push/subscribe`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
-    body: JSON.stringify({ subscription, timezoneOffset }),
+    body: JSON.stringify({ subscription, timezoneOffset, deviceId }),
   });
   return parse(response, 'Не удалось оформить подписку на уведомления');
 }

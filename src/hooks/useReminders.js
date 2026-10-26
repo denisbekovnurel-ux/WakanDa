@@ -1,13 +1,23 @@
 import { useCallback, useEffect } from 'react';
 import { pluralize } from '../utils/pluralize';
 import { useFeedback } from '../components/FeedbackContext';
+import { useAuth } from '../auth/AuthContext';
 
 const PERIODIC_SYNC_TAG = 'wakanda-daily-reminder';
+
+async function getActiveServiceWorker() {
+  if (!('serviceWorker' in navigator)) return null;
+  // В dev service worker не регистрируется, и `ready` ждал бы вечно.
+  const registrations = await navigator.serviceWorker.getRegistrations();
+  if (!registrations.length) return null;
+  return navigator.serviceWorker.ready;
+}
 
 async function registerPeriodicSync() {
   try {
     if (!('serviceWorker' in navigator) || !('Notification' in window)) return;
-    const registration = await navigator.serviceWorker.ready;
+    const registration = await getActiveServiceWorker();
+    if (!registration) return;
     if (!('periodicSync' in registration)) return;
     await registration.periodicSync.register(PERIODIC_SYNC_TAG, {
       minInterval: 12 * 60 * 60 * 1000, // браузер может увеличить интервал сам
@@ -23,9 +33,14 @@ async function registerPeriodicSync() {
  */
 export function useReminders({ enabled, reminderTime, pendingHabits, todayKey }) {
   const { notify } = useFeedback();
+  const { user } = useAuth();
+  const userId = user?.id ?? 'anon';
+
   useEffect(() => {
     if (!enabled) return undefined;
-    function checkReminder() {
+    const lastReminderKey = `wakanda-last-reminder:${userId}:${todayKey}:${reminderTime}`;
+
+    async function checkReminder() {
       if (pendingHabits === 0 || !('Notification' in window) || Notification.permission !== 'granted') return;
       // Фоновая вкладка не должна дёргать уведомление в момент возврата.
       if (document.visibilityState === 'hidden') return;
@@ -35,17 +50,50 @@ export function useReminders({ enabled, reminderTime, pendingHabits, todayKey })
       const due = new Date(now);
       due.setHours(hours, minutes, 0, 0);
       // Срабатывает, как только время наступило, и лишь один раз за день.
-      if (now < due || localStorage.getItem('wakanda-last-reminder-date') === todayKey) return;
-      const message = `Осталось отметить ${pendingHabits} ${pluralize(pendingHabits, 'привычку', 'привычки', 'привычек')}.`;
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.ready
-          .then((registration) => registration.showNotification('WakanDa — время свериться', { body: message, icon: '/icons/icon.svg' }))
-          .catch(() => new Notification('WakanDa — время свериться', { body: message }));
-      } else {
-        new Notification('WakanDa — время свериться', { body: message });
+      if (now < due) return;
+      try {
+        if (localStorage.getItem(lastReminderKey) === todayKey) return;
+      } catch {
+        // localStorage недоступен — перестрахуемся и не шлём повторно чаще 15 секунд
       }
-      localStorage.setItem('wakanda-last-reminder-date', todayKey);
+
+      // Если активен серверный push, напоминание уже уйдёт с бэкенда (даже при
+      // закрытой вкладке) — локальное только дублировало бы его.
+      try {
+        const registration = await getActiveServiceWorker();
+        if (registration?.pushManager && (await registration.pushManager.getSubscription())) return;
+      } catch {
+        // не смогли проверить — показываем локальное уведомление
+      }
+
+      const message = `Осталось отметить ${pendingHabits} ${pluralize(pendingHabits, 'привычку', 'привычки', 'привычек')}.`;
+      let shown;
+      try {
+        const registration = await getActiveServiceWorker();
+        if (registration) {
+          await registration.showNotification('WakanDa — время свериться', { body: message, icon: '/icons/icon.svg' });
+        } else {
+          await new Notification('WakanDa — время свериться', { body: message });
+        }
+        shown = true;
+      } catch {
+        try {
+          new Notification('WakanDa — время свериться', { body: message });
+          shown = true;
+        } catch {
+          // уведомление не показали — фиксируем успех только после реальной отправки
+          shown = false;
+        }
+      }
+      if (shown) {
+        try {
+          localStorage.setItem(lastReminderKey, todayKey);
+        } catch {
+          // приватный режим: на время сессии просто не повторимся чаще интервала
+        }
+      }
     }
+
     const interval = window.setInterval(checkReminder, 15000);
     document.addEventListener('visibilitychange', checkReminder);
     window.addEventListener('focus', checkReminder);
@@ -55,7 +103,7 @@ export function useReminders({ enabled, reminderTime, pendingHabits, todayKey })
       document.removeEventListener('visibilitychange', checkReminder);
       window.removeEventListener('focus', checkReminder);
     };
-  }, [enabled, reminderTime, pendingHabits, todayKey]);
+  }, [enabled, reminderTime, pendingHabits, todayKey, userId]);
 
   const enable = useCallback(async () => {
     if (!('Notification' in window)) {

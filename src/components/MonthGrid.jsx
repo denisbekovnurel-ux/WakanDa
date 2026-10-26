@@ -1,7 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getStreak, isPaused, toDateKey, STATUS } from '../utils/calc';
+import { useToday } from '../hooks/useToday';
 import { useAppStore } from '../store/AppStore';
 import { useFeedback } from './FeedbackContext';
+import { TIMINGS } from '../config/timings';
 
 const weekdayFormatter = new Intl.DateTimeFormat('ru-RU', { weekday: 'short' });
 const monthFormatter = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' });
@@ -9,17 +11,19 @@ const monthFormatter = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: '
 export function MonthGrid({ tasks }) {
   const { actions } = useAppStore();
   const { confirm, notify } = useFeedback();
+  const { today, todayKey } = useToday();
   const [month, setMonth] = useState(() => {
-    const today = new Date();
-    return new Date(today.getFullYear(), today.getMonth(), 1);
+    const current = new Date();
+    return new Date(current.getFullYear(), current.getMonth(), 1);
   });
   const pressTimer = useRef(null);
-  const longPressed = useRef(false);
+  const suppressTimer = useRef(null);
+  const suppressClicks = useRef(false);
   const year = month.getFullYear();
   const monthIndex = month.getMonth();
   const dayCount = new Date(year, monthIndex + 1, 0).getDate();
-  const todayKey = toDateKey(new Date());
-  const days = Array.from({ length: dayCount }, (_, index) => new Date(year, monthIndex, index + 1));
+  const days = Array.from({ length: dayCount }, (_, index) => new Date(year, monthIndex, index + 1, 12));
+  const currentOrFutureMonth = year > today.getFullYear() || (year === today.getFullYear() && monthIndex >= today.getMonth());
 
   function changeMonth(offset) {
     setMonth((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1));
@@ -28,8 +32,9 @@ export function MonthGrid({ tasks }) {
   // Обычный клик: пусто → выполнено → пусто. «Провал» — long-press или правый клик,
   // чтобы случайно не зафиксировать пропуск вместо выполнения.
   function handleCellClick(task, dateKey, status) {
-    if (longPressed.current) {
-      longPressed.current = false;
+    // Клик, сразу следующий за long-press, не должен «переключить» статус обратно.
+    if (suppressClicks.current) {
+      suppressClicks.current = false;
       return;
     }
     if (status === STATUS.DONE || status === STATUS.FAILED) actions.setHabitStatus(task.id, dateKey, STATUS.EMPTY);
@@ -40,18 +45,27 @@ export function MonthGrid({ tasks }) {
     actions.setHabitStatus(task.id, dateKey, STATUS.FAILED);
   }
 
-  function startPress(task, dateKey) {
-    longPressed.current = false;
+  function startPress(task, dateKey, disabled) {
+    if (disabled) return;
+    if (pressTimer.current) window.clearTimeout(pressTimer.current);
     pressTimer.current = window.setTimeout(() => {
-      longPressed.current = true;
+      suppressClicks.current = true;
       markFailed(task, dateKey);
-    }, 500);
+      // Снимаем запрет, даже если клик после удержания так и не пришёл
+      // (пальца увёл с кнопки): иначе первая следующая нажатия терялась бы.
+      suppressTimer.current = window.setTimeout(() => { suppressClicks.current = false; }, TIMINGS.clickSuppressMs);
+    }, TIMINGS.longPressMs);
   }
 
   function endPress() {
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
     pressTimer.current = null;
   }
+
+  useEffect(() => () => {
+    if (pressTimer.current) window.clearTimeout(pressTimer.current);
+    if (suppressTimer.current) window.clearTimeout(suppressTimer.current);
+  }, []);
 
   async function archiveHabit(task) {
     const confirmed = await confirm({
@@ -71,7 +85,7 @@ export function MonthGrid({ tasks }) {
         <div className="month-controls">
           <button type="button" className="month-arrow" onClick={() => changeMonth(-1)} aria-label="Предыдущий месяц">‹</button>
           <time className="month-name" dateTime={`${year}-${String(monthIndex + 1).padStart(2, '0')}`}>{monthFormatter.format(month)}</time>
-          <button type="button" className="month-arrow" onClick={() => changeMonth(1)} aria-label="Следующий месяц">›</button>
+          <button type="button" className="month-arrow" onClick={() => changeMonth(1)} aria-label="Следующий месяц" disabled={currentOrFutureMonth}>›</button>
         </div>
       </div>
 
@@ -91,11 +105,25 @@ export function MonthGrid({ tasks }) {
                   const dateKey = toDateKey(day);
                   const status = task.history?.[dateKey] || STATUS.EMPTY;
                   const scheduled = (task.schedule || [0, 1, 2, 3, 4, 5, 6]).includes(day.getDay());
+                  const future = dateKey > todayKey;
+                  const beforeCreation = Boolean(task.createdAt && dateKey < task.createdAt);
                   const paused = !scheduled ? false : isPaused(task, dateKey);
-                  const interactive = scheduled && !paused;
-                  const statusLabel = !scheduled ? 'выходной по расписанию' : paused ? 'пауза' : status === STATUS.DONE ? 'выполнено' : status === STATUS.FAILED ? 'пропуск' : 'не отмечено';
+                  const interactive = scheduled && !paused && !future && !beforeCreation;
+                  const statusLabel = !scheduled
+                    ? 'выходной по расписанию'
+                    : future
+                      ? 'будущее — отметка недоступна'
+                      : beforeCreation
+                        ? 'привычки ещё не было'
+                        : paused
+                          ? 'пауза'
+                          : status === STATUS.DONE
+                            ? 'выполнено'
+                            : status === STATUS.FAILED
+                              ? 'пропуск'
+                              : 'не отмечено';
                   return <button type="button" key={dateKey} disabled={!interactive}
-                    className={`month-day-cell month-day-cell--${paused ? 'paused' : status} ${dateKey === todayKey ? 'is-today' : ''} ${!scheduled ? 'is-rest' : ''} ${interactive && status === STATUS.EMPTY ? 'is-empty' : ''}`}
+                    className={`month-day-cell month-day-cell--${paused ? 'paused' : status} ${dateKey === todayKey ? 'is-today' : ''} ${!scheduled ? 'is-rest' : ''} ${future ? 'is-future' : ''} ${beforeCreation ? 'is-before-creation' : ''} ${interactive && status === STATUS.EMPTY ? 'is-empty' : ''}`}
                     onClick={() => handleCellClick(task, dateKey, status)}
                     onKeyDown={(event) => {
                       // Пропуск доступен и с клавиатуры, а не только долгим нажатием/правым кликом.
@@ -105,21 +133,21 @@ export function MonthGrid({ tasks }) {
                       }
                     }}
                     onContextMenu={(event) => { event.preventDefault(); if (interactive) markFailed(task, dateKey); }}
-                    onPointerDown={() => startPress(task, dateKey)}
+                    onPointerDown={() => startPress(task, dateKey, !interactive)}
                     onPointerUp={endPress}
                     onPointerLeave={endPress}
                     onPointerCancel={endPress}
                     aria-label={`${task.title}, ${dateKey}: ${statusLabel}${interactive ? '. Клик — выполнено/снять, Delete — пропуск, удержание или правый клик — пропуск' : ''}`}
                     title={`${dateKey} — ${statusLabel}`}><span>{!scheduled ? '—' : paused ? '‖' : status === STATUS.DONE ? '✓' : status === STATUS.FAILED ? '×' : ''}</span></button>;
                 })}
-                <span className="month-streak-label month-streak-value">{getStreak(task.history || {}, task.schedule || [0, 1, 2, 3, 4, 5, 6], new Date(), task.pauseRanges || [])}<small>дн.</small></span>
+                <span className="month-streak-label month-streak-value">{getStreak(task.history || {}, task.schedule || [0, 1, 2, 3, 4, 5, 6], today, task.pauseRanges || [])}<small>дн.</small></span>
                 <button className="delete-btn month-delete" type="button" onClick={() => archiveHabit(task)} aria-label={`Переместить привычку ${task.title} в архив`} title="В архив">↧</button>
               </div>
             ))}
           </div>
         </div>
       )}
-      <div className="month-legend" aria-label="Условные обозначения"><span><i className="legend-dot legend-dot--done" /> выполнено</span><span><i className="legend-dot legend-dot--failed" /> пропуск</span><span><i className="legend-dot legend-dot--paused" /> пауза</span><span><i className="legend-dot" /> не отмечено</span><span className="month-scroll-hint">Узкий экран — прокрути календарь в сторону.</span></div>
+      <div className="month-legend" aria-label="Условные обозначения"><span><i className="legend-dot legend-dot--done" /> выполнено</span><span><i className="legend-dot legend-dot--failed" /> пропуск</span><span><i className="legend-dot legend-dot--paused" /> пауза</span><span><i className="legend-dot" /> не отмечено</span></div>
       <p className="month-fail-hint"><b>Как отметить пропуск:</b> наведи на пустую ячейку — появится «×», затем удерживай её полсекунды, кликни правой кнопкой или нажми Delete.</p>
     </section>
   );

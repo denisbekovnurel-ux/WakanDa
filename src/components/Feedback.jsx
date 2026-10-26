@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FeedbackContext, useFeedback } from './FeedbackContext';
+import { TIMINGS } from '../config/timings';
 
 const MAX_TOASTS = 4;
-const TOAST_DURATION = 6000;
 
 let toastSequence = 0;
 
@@ -31,7 +31,9 @@ export function FeedbackProvider({ children }) {
     const id = ++toastSequence;
     const tone = options.tone || 'info';
     setToasts((current) => [...current, { id, text, tone, title: options.title || '' }].slice(-MAX_TOASTS));
-    const duration = Number.isFinite(options.duration) ? options.duration : TOAST_DURATION;
+    const duration = Number.isFinite(options.duration)
+      ? options.duration
+      : (tone === 'error' ? TIMINGS.toastErrorDurationMs : TIMINGS.toastDurationMs);
     if (duration > 0) {
       const timer = window.setTimeout(() => dismiss(id), duration);
       timersRef.current.set(id, timer);

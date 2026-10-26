@@ -31,7 +31,7 @@ function formatSize(bytes) {
 
 export function StateHistory() {
   const { token } = useAuth();
-  const { actions } = useAppStore();
+  const { adoptServerState } = useAppStore();
   const { confirm } = useFeedback();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -84,8 +84,11 @@ export function StateHistory() {
     setNotice('');
     try {
       const data = await restoreStateSnapshot(token, id);
-      actions.replaceState(data.state);
-      setNotice('Снимок восстановлен и отправлен на сервер.');
+      // Сервер уже сохранил снимок и вернул новую revision. Принимаем его как
+      // серверную версию, иначе клиент повторно отправил бы те же данные с
+      // устаревшей baseRevision и получил бы ложный конфликт.
+      adoptServerState(data.state, data.updatedAt ?? data.restoredAt, data.revision ?? 0);
+      setNotice('Снимок восстановлен.');
       await load();
     } catch (err) {
       setError(err?.message || 'Не удалось восстановить снимок');

@@ -35,7 +35,9 @@ export function isPaused(task, dateKey) {
 export function getStreak(history, schedule = [0, 1, 2, 3, 4, 5, 6], referenceDate = new Date(), pauseRanges = []) {
   if (!schedule.length) return 0;
   const day = new Date(referenceDate);
-  day.setHours(0, 0, 0, 0);
+  // Полдень вместо полуночи: перевод часов не делает «соседний день»
+  // вчерашним/завтрашним и не выкидывает сегодня из цикла.
+  day.setHours(12, 0, 0, 0);
   const paused = (dateKey) => isPaused({ pauseRanges }, dateKey);
   const todayKey = toDateKey(day);
   if (schedule.includes(day.getDay()) && !paused(todayKey)) {
@@ -63,7 +65,12 @@ export function getStreak(history, schedule = [0, 1, 2, 3, 4, 5, 6], referenceDa
 
 export function getBestStreak(history, schedule = [0, 1, 2, 3, 4, 5, 6], pauseRanges = []) {
   const dates = Object.keys(history || {})
-    .filter((date) => history[date] === STATUS.DONE && schedule.includes(new Date(`${date}T12:00:00`).getDay()))
+    .filter(
+      (date) =>
+        history[date] === STATUS.DONE &&
+        !isPaused({ pauseRanges }, date) &&
+        schedule.includes(new Date(`${date}T12:00:00`).getDay()),
+    )
     .sort();
   let best = 0;
   let current = 0;
@@ -96,10 +103,11 @@ export function getHabitStats(task, referenceDate = new Date()) {
   const pauseRanges = task.pauseRanges || [];
   const year = referenceDate.getFullYear();
   const month = referenceDate.getMonth();
-  const monthStart = new Date(year, month, 1);
-  const monthEnd = new Date(year, month + 1, 0);
-  const today = new Date(year, month, referenceDate.getDate());
-  const created = task.createdAt ? new Date(`${task.createdAt}T00:00:00`) : monthStart;
+  const monthStart = new Date(year, month, 1, 12);
+  const monthEnd = new Date(year, month + 1, 0, 12);
+  const today = new Date(year, month, referenceDate.getDate(), 12);
+  const parsedCreated = task.createdAt ? new Date(`${task.createdAt}T12:00:00`) : monthStart;
+  const created = Number.isNaN(parsedCreated.getTime()) ? monthStart : parsedCreated;
   const start = created > monthStart ? created : monthStart;
   let monthExpected = 0;
   let monthDone = 0;
@@ -138,7 +146,9 @@ export function getHabitStats(task, referenceDate = new Date()) {
  * линии тренда и матрицы. Возвращает null, если в этот день по расписанию не
  * было ни одной активной привычки (выходной) — такие дни отмечаем отдельно.
  */
-export function buildDayPercent(tasks, dateKey, day) {
+export function buildDayPercent(tasks, dateKey, day, referenceDate = new Date()) {
+  // Будущие дни текущего месяца ещё не наступили: это не «0%», а «нет данных».
+  if (dateKey > toDateKey(referenceDate)) return null;
   let expected = 0;
   let done = 0;
   for (const task of tasks) {
@@ -157,9 +167,9 @@ export function buildDayPercent(tasks, dateKey, day) {
  * отметить и сколько отмечено. asOfDay ограничивает расчёт (для текущего месяца
  * считаем только до сегодня; для прошедших — весь месяц).
  */
-export function getMonthSummary(tasks, year, month, asOfDay) {
-  const monthEnd = new Date(year, month + 1, 0);
-  const now = new Date();
+export function getMonthSummary(tasks, year, month, asOfDay, referenceDate = new Date()) {
+  const monthEnd = new Date(year, month + 1, 0, 12);
+  const now = new Date(referenceDate);
   const isFutureMonth = year > now.getFullYear() || (year === now.getFullYear() && month > now.getMonth());
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
   const fallbackDay = isFutureMonth ? 0 : isCurrentMonth ? now.getDate() : monthEnd.getDate();
@@ -167,7 +177,7 @@ export function getMonthSummary(tasks, year, month, asOfDay) {
   let expected = 0;
   let done = 0;
   for (let dayNumber = 1; dayNumber <= lastDay; dayNumber++) {
-    const day = new Date(year, month, dayNumber);
+    const day = new Date(year, month, dayNumber, 12);
     const dateKey = toDateKey(day);
     for (const task of tasks) {
       if (task.archived) continue;
@@ -193,14 +203,15 @@ export function getPercentDelta(currentPercent, previousPercent) {
  */
 export function getWeekdayStats(tasks, referenceDate = new Date()) {
   const today = new Date(referenceDate);
-  today.setHours(0, 0, 0, 0);
+  today.setHours(12, 0, 0, 0);
   const weekdays = Array.from({ length: 7 }, (_, day) => ({ day, done: 0, expected: 0 }));
   for (const task of tasks) {
     if (task.archived) continue;
     const history = task.history || {};
     const schedule = task.schedule || [0, 1, 2, 3, 4, 5, 6];
-    const created = task.createdAt ? new Date(`${task.createdAt}T00:00:00`) : null;
-    const start = created ?? new Date(today.getFullYear(), today.getMonth(), 1);
+    const parsedCreated = task.createdAt ? new Date(`${task.createdAt}T12:00:00`) : null;
+    const created = parsedCreated && !Number.isNaN(parsedCreated.getTime()) ? parsedCreated : null;
+    const start = created ?? new Date(today.getFullYear(), today.getMonth(), 1, 12);
     for (const day = new Date(start); day <= today; day.setDate(day.getDate() + 1)) {
       if (!schedule.includes(day.getDay()) || isPaused(task, toDateKey(day))) continue;
       weekdays[day.getDay()].expected += 1;

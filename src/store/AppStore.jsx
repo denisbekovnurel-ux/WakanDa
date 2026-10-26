@@ -4,6 +4,8 @@ import { loadState, loadSyncMeta, saveState, saveSyncMeta } from '../utils/migra
 import { normalizeState } from '../utils/schema';
 import { createTask } from '../utils/tasks';
 import { useAuth } from '../auth/AuthContext';
+import { decideInitialSync, hasServerChanged, SYNC_ACTION } from './syncDecision';
+import { TIMINGS } from '../config/timings';
 
 const AppStoreContext = createContext(null);
 
@@ -147,11 +149,13 @@ export function AppStoreProvider({ children }) {
   const [syncStatus, setSyncStatus] = useState('connecting');
   const [conflict, setConflict] = useState(null);
   const [syncTick, setSyncTick] = useState(0);
+  const [initialTick, setInitialTick] = useState(0);
 
   const metaRef = useRef(null);
   if (metaRef.current === null) metaRef.current = loadSyncMeta(userId);
 
   const readyRef = useRef(false);
+  const savingRef = useRef(false);
   const stateRef = useRef(state);
   useEffect(() => {
     stateRef.current = state;
@@ -169,70 +173,110 @@ export function AppStoreProvider({ children }) {
 
   const actions = useActions(dispatch);
 
-  const adoptRemote = useCallback((remote, updatedAt) => {
+  const adoptRemote = useCallback((remote, updatedAt, revision = 0) => {
     rawDispatch({ type: 'state/adopt', state: remote });
     saveState(remote, userId);
-    metaRef.current = { dirty: false, lastLocalChangeAt: null, lastSyncedAt: updatedAt ?? new Date().toISOString() };
+    metaRef.current = {
+      dirty: false,
+      lastLocalChangeAt: null,
+      lastSyncedAt: updatedAt ?? new Date().toISOString(),
+      revision: Number.isInteger(revision) ? revision : 0,
+    };
     saveSyncMeta(userId, metaRef.current);
     setSyncStatus('saved');
   }, [rawDispatch, userId]);
 
+  const applySavedMeta = useCallback((meta, saved, baseRevision) => {
+    const revision = Number.isInteger(saved?.revision)
+      ? saved.revision
+      : (Number.isInteger(baseRevision) ? baseRevision + 1 : (meta.revision ?? 0) + 1);
+    meta.revision = revision;
+    meta.lastSyncedAt = saved?.savedAt ?? saved?.updatedAt ?? new Date().toISOString();
+  }, []);
+
   // Первичная синхронизация: не затираем локальные правки, сделанные оффлайн.
+  // Пока GET не удался, автосохранение запрещено: иначе устаревший локальный
+  // кэш мог бы затереть сервер, который мы ещё не видели.
   useEffect(() => {
     let cancelled = false;
     if (!token || !userId) return undefined;
+    readyRef.current = false;
     (async () => {
       try {
-        const { state: remoteRaw, updatedAt } = await fetchServerState(token);
+        const { state: remoteRaw, updatedAt, revision } = await fetchServerState(token);
         if (cancelled) return;
         const remote = normalizeState(remoteRaw);
         const meta = metaRef.current;
         const local = stateRef.current;
 
-        if (isEmptyAppState(remote)) {
-          // На сервере пусто: если локально что-то есть — отправляем это наверх.
-          if (!isEmptyAppState(local)) {
-            const saved = await saveServerState(token, local);
-            if (cancelled) return;
-            meta.lastSyncedAt = saved?.savedAt ?? new Date().toISOString();
-          }
-          meta.dirty = false;
-          saveSyncMeta(userId, meta);
-          setSyncStatus('saved');
-          readyRef.current = true;
-          return;
-        }
-
         const localDirty = Boolean(meta.dirty && meta.lastLocalChangeAt);
-        const remoteAt = updatedAt ? Date.parse(updatedAt) : 0;
-        const syncedAt = meta.lastSyncedAt ? Date.parse(meta.lastSyncedAt) : 0;
-        const serverChangedSinceSync = remoteAt > syncedAt + 1000;
+        const serverChangedSinceSync = hasServerChanged({
+          revision,
+          knownRevision: meta.revision,
+          remoteUpdatedAt: updatedAt,
+          lastSyncedAt: meta.lastSyncedAt,
+        });
+        const action = decideInitialSync({
+          remoteIsEmpty: isEmptyAppState(remote),
+          localIsEmpty: isEmptyAppState(local),
+          localDirty,
+          serverChangedSinceSync,
+        });
 
-        if (!localDirty) {
+        if (action === SYNC_ACTION.ADOPT_REMOTE) {
           // Несинхронизированных правок нет — серверная версия главнее.
-          adoptRemote(remote, updatedAt);
-        } else if (!serverChangedSinceSync) {
-          // Сервер с нашей последней синхронизации не менялся: правки оффлайн свежее.
-          const saved = await saveServerState(token, local);
+          adoptRemote(remote, updatedAt, revision);
+        } else if (action === SYNC_ACTION.PUSH_LOCAL) {
+          // Отправляем локальное: либо на сервере пусто, либо оно не менялось
+          // с нашей последней синхронизации.
+          const localChangeAt = metaRef.current.lastLocalChangeAt;
+          const saved = await saveServerState(token, local, revision);
           if (cancelled) return;
+          const current = metaRef.current;
+          const stillDirty = local !== stateRef.current || current.lastLocalChangeAt !== localChangeAt;
+          current.dirty = stillDirty;
+          applySavedMeta(current, saved, revision);
+          saveSyncMeta(userId, current);
+          if (stillDirty) {
+            setSyncStatus('saving');
+            setSyncTick((tick) => tick + 1);
+          } else {
+            setSyncStatus('saved');
+          }
+        } else if (action === SYNC_ACTION.CONFLICT) {
+          // Изменилось и локально, и на сервере — спрашиваем пользователя.
+          setConflict({ local, remote, remoteUpdatedAt: updatedAt ?? null, remoteRevision: revision });
+          setSyncStatus('offline');
+        } else {
+          // Обе стороны пусты — запоминаем, что синхронизированы.
           meta.dirty = false;
-          meta.lastSyncedAt = saved?.savedAt ?? new Date().toISOString();
+          meta.revision = revision;
+          meta.lastSyncedAt = updatedAt ?? new Date().toISOString();
           saveSyncMeta(userId, meta);
           setSyncStatus('saved');
-        } else {
-          // Изменилось и локально, и на сервере — спрашиваем пользователя.
-          setConflict({ local, remote, remoteUpdatedAt: updatedAt ?? null });
-          setSyncStatus('offline');
         }
         readyRef.current = true;
       } catch (error) {
+        if (cancelled) return;
+        if (error.status === 409 && error.data?.state) {
+          const remote = normalizeState(error.data.state);
+          setConflict({
+            local: stateRef.current,
+            remote,
+            remoteUpdatedAt: error.data.updatedAt ?? null,
+            remoteRevision: Number.isInteger(error.data.revision) ? error.data.revision : 0,
+          });
+          setSyncStatus('offline');
+          readyRef.current = true;
+          return;
+        }
         console.error('Сервер недоступен, работаем из локального кэша:', error);
-        readyRef.current = true;
+        readyRef.current = false;
         setSyncStatus('offline');
       }
     })();
     return () => { cancelled = true; };
-  }, [token, userId, adoptRemote]);
+  }, [token, userId, adoptRemote, applySavedMeta, initialTick]);
 
   useEffect(() => { saveState(state, userId); }, [state, userId]);
 
@@ -240,13 +284,19 @@ export function AppStoreProvider({ children }) {
   // несинхронизированные правки — иначе они ждали бы следующего действия пользователя.
   useEffect(() => {
     if (!token) return undefined;
-    const retry = () => setSyncTick((tick) => tick + 1);
-    window.addEventListener('online', retry);
+    const retry = () => {
+      if (readyRef.current) setSyncTick((tick) => tick + 1);
+      else setInitialTick((tick) => tick + 1);
+    };
+    const onOnline = () => {
+      setInitialTick((tick) => tick + 1);
+    };
+    window.addEventListener('online', onOnline);
     const timer = window.setInterval(() => {
-      if (metaRef.current?.dirty) retry();
-    }, 30000);
+      if (!readyRef.current || metaRef.current?.dirty) retry();
+    }, TIMINGS.syncRetryMs);
     return () => {
-      window.removeEventListener('online', retry);
+      window.removeEventListener('online', onOnline);
       window.clearInterval(timer);
     };
   }, [token]);
@@ -254,45 +304,83 @@ export function AppStoreProvider({ children }) {
   // Автосохранение на сервер. Работает, только если есть несинхронизированные
   // правки и нет неразрешённого конфликта.
   useEffect(() => {
-    if (!readyRef.current || !token || conflict) return undefined;
+    if (!readyRef.current || !token || conflict || savingRef.current) return undefined;
     if (!metaRef.current.dirty) return undefined;
     setSyncStatus((current) => (current === 'offline' ? 'offline' : 'saving'));
+    const snapshot = stateRef.current;
+    const localChangeAt = metaRef.current.lastLocalChangeAt;
+    const baseRevision = metaRef.current.revision;
     const timer = window.setTimeout(async () => {
+      savingRef.current = true;
       try {
-        const saved = await saveServerState(token, stateRef.current);
-        metaRef.current = { ...metaRef.current, dirty: false, lastSyncedAt: saved?.savedAt ?? new Date().toISOString() };
-        saveSyncMeta(userId, metaRef.current);
-        setSyncStatus('saved');
+        const saved = await saveServerState(token, snapshot, baseRevision);
+        // Пока запрос летел, пользователь мог продолжить редактировать.
+        // Тогда dirty нельзя снимать: следующая попытка отправит свежий снимок.
+        const stillDirty = snapshot !== stateRef.current || metaRef.current.lastLocalChangeAt !== localChangeAt;
+        const nextMeta = { ...metaRef.current, dirty: stillDirty };
+        applySavedMeta(nextMeta, saved, baseRevision);
+        metaRef.current = nextMeta;
+        saveSyncMeta(userId, nextMeta);
+        if (stillDirty) {
+          setSyncStatus('saving');
+          setSyncTick((tick) => tick + 1);
+        } else {
+          setSyncStatus('saved');
+        }
       } catch (error) {
-        console.error('Автосохранение на сервер не удалось:', error);
-        setSyncStatus('offline');
+        if (error.status === 409 && error.data?.state) {
+          setConflict({
+            local: stateRef.current,
+            remote: normalizeState(error.data.state),
+            remoteUpdatedAt: error.data.updatedAt ?? null,
+            remoteRevision: Number.isInteger(error.data.revision) ? error.data.revision : 0,
+          });
+          setSyncStatus('offline');
+        } else {
+          console.error('Автосохранение на сервер не удалось:', error);
+          setSyncStatus('offline');
+        }
+      } finally {
+        savingRef.current = false;
       }
-    }, 400);
+    }, TIMINGS.autosaveDebounceMs);
     return () => window.clearTimeout(timer);
-  }, [state, token, userId, conflict, syncTick]);
+  }, [state, token, userId, conflict, syncTick, applySavedMeta]);
 
   const resolveConflict = useCallback(async (choice) => {
     if (!conflict) return;
     if (choice === 'server') {
-      adoptRemote(conflict.remote, conflict.remoteUpdatedAt);
+      adoptRemote(conflict.remote, conflict.remoteUpdatedAt, conflict.remoteRevision);
       setConflict(null);
       return;
     }
     try {
-      const saved = await saveServerState(token, stateRef.current);
-      metaRef.current = { ...metaRef.current, dirty: false, lastSyncedAt: saved?.savedAt ?? new Date().toISOString() };
+      const saved = await saveServerState(token, stateRef.current, conflict.remoteRevision);
+      metaRef.current = { ...metaRef.current, dirty: false };
+      applySavedMeta(metaRef.current, saved, conflict.remoteRevision);
       saveSyncMeta(userId, metaRef.current);
       setConflict(null);
       setSyncStatus('saved');
     } catch (error) {
+      if (error.status === 409 && error.data?.state) {
+        // Пока пользователь выбирал, сервер успел измениться ещё раз.
+        setConflict({
+          local: stateRef.current,
+          remote: normalizeState(error.data.state),
+          remoteUpdatedAt: error.data.updatedAt ?? null,
+          remoteRevision: Number.isInteger(error.data.revision) ? error.data.revision : 0,
+        });
+        throw new Error('Данные на сервере снова изменились. Проверь версии и выбери ещё раз.', { cause: error });
+      }
       console.error('Не удалось отправить локальные данные на сервер:', error);
       setSyncStatus('offline');
+      throw error;
     }
-  }, [conflict, token, userId, adoptRemote]);
+  }, [conflict, token, userId, adoptRemote, applySavedMeta]);
 
   const value = useMemo(
-    () => ({ state, actions, syncStatus, conflict, resolveConflict }),
-    [state, actions, syncStatus, conflict, resolveConflict],
+    () => ({ state, actions, syncStatus, conflict, resolveConflict, adoptServerState: adoptRemote }),
+    [state, actions, syncStatus, conflict, resolveConflict, adoptRemote],
   );
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>;
 }

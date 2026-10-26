@@ -1,10 +1,24 @@
 import { Body, Controller, ForbiddenException, Get, Inject, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
-import { AppState, SnapshotReason, StateService } from './state.service';
+import { SnapshotReason, StateService } from './state.service';
 import { AuthGuard, AuthedRequest } from '../auth/auth.guard';
 import { userOrIpTracker } from '../security/rate-limit';
 
 type SnapshotBody = { reason?: unknown };
+type SaveBody = { state?: unknown; baseRevision?: unknown; [key: string]: unknown };
+
+function readSaveBody(body: SaveBody): { state: unknown; baseRevision: number | null } {
+  // Новый клиент присылает { state, baseRevision }. Старый формат (само состояние)
+  // тоже принимаем, чтобы обновление не ломало уже открытые вкладки.
+  if (body && typeof body === 'object' && Object.hasOwn(body, 'state')) {
+    const revision = body.baseRevision;
+    return {
+      state: body.state,
+      baseRevision: Number.isInteger(revision) ? Number(revision) : null,
+    };
+  }
+  return { state: body, baseRevision: null };
+}
 
 // Лимит на запись: автосохранение шлёт PUT после паузы в наборе, поэтому 30/мин
 // с запасом покрывает обычную работу, но не позволяет заливать 2 МБ непрерывно.
@@ -24,15 +38,17 @@ export class StateController {
     this.ensureApproved(req);
     const isAdmin = req.user?.role === 'admin';
     const state = this.state.loadForUser(req.user!.id, isAdmin);
-    return { state, updatedAt: this.state.updatedAtForUser(req.user!.id) };
+    return { state, ...this.state.metaForUser(req.user!.id) };
   }
 
   @Throttle({ default: { limit: 30, ttl: 60_000, getTracker: userOrIpTracker } })
   @Put()
-  save(@Req() req: AuthedRequest, @Body() body: AppState) {
+  save(@Req() req: AuthedRequest, @Body() body: SaveBody) {
     this.ensureApproved(req);
-    this.state.saveForUser(req.user!.id, body);
-    return { ok: true, savedAt: new Date().toISOString() };
+    const { state, baseRevision } = readSaveBody(body);
+    this.state.saveForUser(req.user!.id, state, baseRevision);
+    const meta = this.state.metaForUser(req.user!.id);
+    return { ok: true, savedAt: meta.updatedAt, ...meta };
   }
 
   @Get('history')
@@ -52,7 +68,9 @@ export class StateController {
   @Post('history/:id/restore')
   restore(@Req() req: AuthedRequest, @Param('id') id: string) {
     this.ensureApproved(req);
-    return { state: this.state.restoreHistory(req.user!.id, Number(id)), restoredAt: new Date().toISOString() };
+    const state = this.state.restoreHistory(req.user!.id, Number(id));
+    const meta = this.state.metaForUser(req.user!.id);
+    return { state, restoredAt: meta.updatedAt, ...meta };
   }
 
   // Принудительный снимок текущего состояния — клиент вызывает перед импортом бэкапа.

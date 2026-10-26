@@ -1,15 +1,20 @@
 import { createRoot } from "react-dom/client";
 import "./index.css";
+import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 import { AuthProvider } from "./auth/AuthContext.jsx";
 import { AuthGate } from "./components/Auth/AuthGate.jsx";
 import { FeedbackProvider } from "./components/Feedback.jsx";
 
 createRoot(document.getElementById("root")).render(
-  <FeedbackProvider>
-    <AuthProvider>
-      <AuthGate />
-    </AuthProvider>
-  </FeedbackProvider>
+  // ErrorBoundary — снаружи всех провайдеров: падение любого из них должно
+  // показывать экран восстановления, а не пустую страницу.
+  <ErrorBoundary>
+    <FeedbackProvider>
+      <AuthProvider>
+        <AuthGate />
+      </AuthProvider>
+    </FeedbackProvider>
+  </ErrorBoundary>
 );
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {

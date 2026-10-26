@@ -76,12 +76,19 @@ export function createProgressCard({ monthLabel, percent, done, expected, days =
   ctx.font = '600 32px "DM Sans", sans-serif';
   ctx.fillText(`выполнено ${done} из ${expected}`, 82, 420);
 
-  // Календарь месяца
+  // Календарь месяца. Размер ячейки считаем от числа реальных недель (4–6),
+  // иначе сетка уезжала за нижний край карточки: в октябре 2026 подвал
+  // перекрывался, а последние дни обрезались.
   const cols = 7;
-  const gap = 14;
-  const gridLeft = 80;
-  const gridTop = 540;
-  const cell = Math.floor((size - gridLeft * 2 - gap * (cols - 1)) / cols);
+  const gap = 12;
+  const gridTop = 500;
+  const footerY = size - 60;
+  const availableHeight = footerY - 24 - gridTop;
+  const offset = days.length ? days[0].date.getDay() : 0;
+  const rows = Math.max(1, Math.ceil((offset + days.length) / cols));
+  const cell = Math.floor((availableHeight - gap * (rows - 1)) / rows);
+  const gridWidth = cols * cell + gap * (cols - 1);
+  const gridLeft = Math.round((size - gridWidth) / 2);
 
   // Заголовки дней недели
   ctx.textAlign = 'center';
@@ -93,7 +100,6 @@ export function createProgressCard({ monthLabel, percent, done, expected, days =
   }
 
   // Первый день месяца определяет смещение в сетке (неделя от воскресенья).
-  const offset = days.length ? days[0].date.getDay() : 0;
   let index = offset;
   for (const day of days) {
     const col = index % cols;
@@ -115,12 +121,12 @@ export function createProgressCard({ monthLabel, percent, done, expected, days =
   if (streakHabit) {
     ctx.fillStyle = '#c9bccf';
     ctx.font = '600 26px "DM Sans", sans-serif';
-    ctx.fillText(`${streakHabit.title} · серия ${streakHabit.current} дн.`, 80, size - 84);
+    ctx.fillText(`${streakHabit.title} · серия ${streakHabit.current} дн.`, 80, footerY);
   }
   ctx.textAlign = 'right';
   ctx.fillStyle = '#7d7488';
   ctx.font = '600 24px "DM Sans", sans-serif';
-  ctx.fillText('WakanDa · привычки', size - 80, size - 84);
+  ctx.fillText('WakanDa · привычки', size - 80, footerY);
 
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Не удалось собрать картинку'))), 'image/png');
@@ -133,9 +139,14 @@ export function createProgressCard({ monthLabel, percent, done, expected, days =
  */
 export async function shareOrDownload(blob, filename, text) {
   const file = new File([blob], filename, { type: 'image/png' });
-  const canShareFiles = typeof navigator !== 'undefined'
-    && typeof navigator.canShare === 'function'
-    && navigator.canShare({ files: [file] });
+  let canShareFiles;
+  try {
+    canShareFiles = typeof navigator !== 'undefined'
+      && typeof navigator.canShare === 'function'
+      && navigator.canShare({ files: [file] });
+  } catch {
+    canShareFiles = false;
+  }
 
   if (canShareFiles) {
     try {

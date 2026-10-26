@@ -1,10 +1,12 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, OnModuleInit, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, OnModuleDestroy, OnModuleInit, UnauthorizedException } from '@nestjs/common';
 import Database from 'better-sqlite3';
-import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseService } from '../database/database.service';
-import { FIXED_ADMIN_PASSWORD, FIXED_ADMIN_USERNAME } from './admin.config';
+import { FIXED_ADMIN_USERNAME } from './admin.config';
+
+const PASSWORD_ROTATED_SETTING = 'admin_password_rotated';
 
 export type UserRole = 'admin' | 'user';
 export type UserStatus = 'pending' | 'approved' | 'blocked';
@@ -43,13 +45,17 @@ const ONLINE_WINDOW_MS = 1000 * 120;
 const USERNAME_RE = /^[\p{L}\p{N}_.-]{3,24}$/u;
 
 @Injectable()
-export class AuthService implements OnModuleInit {
+export class AuthService implements OnModuleInit, OnModuleDestroy {
   // touch() больше не пишет в SQLite на каждый запрос: сессия и так живёт долго,
   // а «онлайн» определяется окном в две минуты. Обновляем статус не чаще 30 секунд.
   private static readonly TOUCH_INTERVAL_MS = 30 * 1000;
   private readonly lastTouchAt = new Map<string, number>();
   private readonly db: Database.Database;
   private readonly dataDir: string;
+  private cleanupTimer: NodeJS.Timeout | null = null;
+  // Хэш-заглушка для несуществующего логина: вход отвечает за то же время,
+  // что и неверный пароль, и не выдаёт существование аккаунта по таймингу.
+  private readonly dummyPasswordHash = this.hashPassword(randomBytes(18).toString('base64url'));
 
   constructor(@Inject(DatabaseService) database: DatabaseService) {
     this.db = database.connection;
@@ -60,7 +66,13 @@ export class AuthService implements OnModuleInit {
     this.cleanExpiredSessions();
     this.ensureAdmin();
     // Периодическая уборка истёкших сессий (не держит процесс живым).
-    setInterval(() => this.cleanExpiredSessions(), 60 * 60 * 1000).unref();
+    this.cleanupTimer = setInterval(() => this.cleanExpiredSessions(), 60 * 60 * 1000);
+    this.cleanupTimer.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.cleanupTimer) clearInterval(this.cleanupTimer);
+    this.cleanupTimer = null;
   }
 
   // ─────────────────────────── Администратор ───────────────────────────
@@ -72,23 +84,64 @@ export class AuthService implements OnModuleInit {
   //   • появился второй админ — понизить его до обычного пользователя.
   private ensureAdmin() {
     const username = (process.env.WAKANDA_ADMIN_USER || '').trim() || FIXED_ADMIN_USERNAME;
-    const password = process.env.WAKANDA_ADMIN_PASS || FIXED_ADMIN_PASSWORD;
-    const usingDefaultPassword = !process.env.WAKANDA_ADMIN_PASS;
+    const envPassword = (process.env.WAKANDA_ADMIN_PASS || '').trim();
+    const usingEnvPassword = Boolean(envPassword);
+    const isProduction = process.env.NODE_ENV === 'production';
     const now = new Date().toISOString();
+
+    if (usingEnvPassword && envPassword.length < 6) {
+      throw new Error('WAKANDA_ADMIN_PASS должен быть не короче 6 символов');
+    }
 
     const admins = this.db
       .prepare("SELECT * FROM users WHERE role = 'admin' ORDER BY created_at")
       .all() as UserRow[];
 
     let target = admins.find((admin) => admin.username.toLowerCase() === username.toLowerCase());
+    const repaired: string[] = [];
+    let generatedPassword: string | null = null;
+    // В старых версиях у админа был публичный пароль по умолчанию. Отличить его
+    // от пользовательского без знания пароля нельзя, поэтому для баз без метки
+    // делаем однократную ротацию: пароль становится случайным и попадает в
+    // admin-credentials.txt. Метка в settings не даёт повторять это при каждом запуске.
+    let passwordRotated = Boolean(
+      this.db.prepare('SELECT value FROM settings WHERE key = ?').get(PASSWORD_ROTATED_SETTING),
+    );
 
     if (!target) {
-      target = this.createUserRow(username, password, 'admin', 'approved');
+      const usernameOwner = this.db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+      if (usernameOwner) {
+        throw new Error(`Логин администратора «${username}» уже занят обычным пользователем. Задайте другой WAKANDA_ADMIN_USER.`);
+      }
+      if (admins.length && !usingEnvPassword) {
+        throw new Error(
+          `Администратор уже существует под другим логином. Задайте WAKANDA_ADMIN_USER или WAKANDA_ADMIN_PASS, чтобы создать нового.`,
+        );
+      }
+      if (!usingEnvPassword && isProduction) {
+        throw new Error('В production задайте WAKANDA_ADMIN_PASS — пароль администратора не будет создан случайно.');
+      }
+
+      const initialPassword = usingEnvPassword ? envPassword : this.generateAdminPassword();
+      if (!usingEnvPassword) generatedPassword = initialPassword;
+      target = this.createUserRow(username, initialPassword, 'admin', 'approved');
+      repaired.push(generatedPassword ? 'создан со случайным паролем' : 'создан');
+      passwordRotated = true;
     } else {
-      const repaired: string[] = [];
-      if (!this.verifyPassword(password, target.password_hash)) {
-        this.db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(this.hashPassword(password), target.id);
-        repaired.push('пароль');
+      // Пароль, изменённый пользователем/админом, больше НЕ откатывается к
+      // значению из репозитория при каждом запуске. Явно заданный env-пароль
+      // применяется осознанно; без env старый публичный пароль заменяется один раз.
+      if (usingEnvPassword) {
+        if (!this.verifyPassword(envPassword, target.password_hash)) {
+          this.db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(this.hashPassword(envPassword), target.id);
+          repaired.push('пароль из WAKANDA_ADMIN_PASS');
+        }
+        passwordRotated = true;
+      } else if (!passwordRotated) {
+        generatedPassword = this.generateAdminPassword();
+        this.db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(this.hashPassword(generatedPassword), target.id);
+        repaired.push('устаревший пароль заменён случайным');
+        passwordRotated = true;
       }
       if (target.status !== 'approved') {
         this.db
@@ -96,10 +149,17 @@ export class AuthService implements OnModuleInit {
           .run('approved', now, target.id);
         repaired.push('статус');
       }
-      target = this.db.prepare('SELECT * FROM users WHERE id = ?').get(target.id) as UserRow;
-      if (repaired.length) {
-        console.log(`WakanDa: аккаунт администратора приведён в порядок (${repaired.join(', ')})`);
-      }
+    }
+
+    if (passwordRotated) {
+      this.db
+        .prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+        .run(PASSWORD_ROTATED_SETTING, '1');
+    }
+
+    target = this.db.prepare('SELECT * FROM users WHERE id = ?').get(target.id) as UserRow;
+    if (repaired.length) {
+      console.log(`WakanDa: аккаунт администратора приведён в порядок (${repaired.join(', ')})`);
     }
 
     // Никаких вторых администраторов.
@@ -111,42 +171,51 @@ export class AuthService implements OnModuleInit {
     }
 
     const credentialsFile = join(this.dataDir, 'admin-credentials.txt');
-    // На диск пишем только логин и проверочный хэш — открытый пароль не храним.
+    const passwordLine = generatedPassword
+      ? `Пароль: ${generatedPassword}\n        Сохраните его и смените через раздел «Пароль».\n`
+      : usingEnvPassword
+        ? 'Пароль: задан переменной WAKANDA_ADMIN_PASS (в файл не записывается).\n'
+        : 'Пароль: не хранится в открытом виде. Задайте WAKANDA_ADMIN_PASS, чтобы сменить его.\n';
     const content =
       'WakanDa — доступ администратора\n' +
       `Логин:  ${username}\n` +
-      'Пароль: в открытом виде не хранится.\n' +
-      (usingDefaultPassword
-        ? '        Задайте свой пароль переменной WAKANDA_ADMIN_PASS в server/.env.\n'
-        : '        Значение задано переменной окружения WAKANDA_ADMIN_PASS.\n') +
-      `Проверочный хэш (scrypt): ${this.hashPassword(password)}\n\n` +
+      passwordLine +
+      `Проверочный хэш (scrypt): ${target.password_hash}\n\n` +
       'Это ЕДИНСТВЕННЫЙ администратор. Он создаётся автоматически и не может быть\n' +
       'удалён, заблокирован или продублирован (регистрация всегда создаёт обычных\n' +
       'пользователей, а лишние «админы» понижаются при запуске сервера).\n\n' +
-      'Сменить пароль осознанно: задайте WAKANDA_ADMIN_PASS в server/.env и перезапустите сервер.\n';
+      'Сменить пароль можно в разделе «Пароль» или задав WAKANDA_ADMIN_PASS в server/.env.\n' +
+      'Без WAKANDA_ADMIN_PASS сервер НЕ сбрасывает изменённый пароль при перезапуске.\n';
     try {
       writeFileSync(credentialsFile, content, { mode: 0o600 });
     } catch (error) {
       console.error('Не удалось сохранить файл с данными администратора:', error);
+      if (generatedPassword) {
+        console.error(`WakanDa: сохраните сгенерированный пароль администратора вручную: ${generatedPassword}`);
+      }
     }
-    const isProduction = process.env.NODE_ENV === 'production';
-    if (usingDefaultPassword) {
-      console.warn(
-        isProduction
-          ? 'WakanDa: ВНИМАНИЕ! Пароль администратора не задан (используется значение по умолчанию из репозитория). Перед выходом в интернет задайте WAKANDA_ADMIN_PASS в server/.env!'
-          : 'WakanDa: администратор использует пароль по умолчанию (WAKANDA_ADMIN_PASS не задан). Для продакшена это небезопасно.',
-      );
-    }
+
     if (process.platform === 'win32') {
       console.warn('WakanDa: на Windows права файла admin-credentials.txt (0600) не действуют — считайте файл обычным секретом.');
     }
     console.log('\n============================================');
     console.log('  WakanDa: аккаунт администратора (единственный)');
     console.log(`  Логин:  ${username}`);
-    // В проде пароль в лог не пишем; в dev — показываем для удобства первого входа.
-    console.log(isProduction ? '  Пароль: задан переменной WAKANDA_ADMIN_PASS (в лог не выводится)' : `  Пароль: ${password}`);
-    console.log(`  Файл:   ${credentialsFile} (пароль хранится только хэшем)`);
+    if (generatedPassword) {
+      console.log(isProduction
+        ? `  Пароль: сгенерирован и записан в ${credentialsFile}`
+        : `  Пароль: ${generatedPassword}`);
+    } else if (usingEnvPassword) {
+      console.log('  Пароль: задан переменной WAKANDA_ADMIN_PASS (в лог не выводится)');
+    } else {
+      console.log('  Пароль: не изменялся; в открытом виде не хранится');
+    }
+    console.log(`  Файл:   ${credentialsFile}`);
     console.log('============================================\n');
+  }
+
+  private generateAdminPassword(): string {
+    return randomBytes(18).toString('base64url');
   }
 
   // ─────────────────────────── Пароли ───────────────────────────
@@ -187,7 +256,10 @@ export class AuthService implements OnModuleInit {
     if (!username || !password) throw new BadRequestException('Введите логин и пароль');
 
     const row = this.db.prepare('SELECT * FROM users WHERE username = ?').get(username) as UserRow | undefined;
-    if (!row || !this.verifyPassword(password, row.password_hash)) {
+    // Для несуществующего логина всё равно считаем scrypt, чтобы время ответа
+    // не подсказывало, зарегистрирован аккаунт или нет.
+    const passwordOk = this.verifyPassword(password, row?.password_hash ?? this.dummyPasswordHash);
+    if (!row || !passwordOk) {
       throw new UnauthorizedException('Неверный логин или пароль');
     }
     if (row.status === 'blocked') {
@@ -229,13 +301,13 @@ export class AuthService implements OnModuleInit {
     this.validatePassword(newPassword);
     this.db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(this.hashPassword(newPassword), userId);
     // Все остальные сессии этого пользователя больше недействительны.
-    this.db.prepare('DELETE FROM sessions WHERE user_id = ? AND token <> ?').run(userId, sessionToken);
+    this.deleteOtherSessions(userId, sessionToken);
     return { ok: true };
   }
 
   logoutEverywhere(userId: string, exceptToken?: string) {
     const removed = exceptToken
-      ? this.db.prepare('DELETE FROM sessions WHERE user_id = ? AND token <> ?').run(userId, exceptToken)
+      ? this.deleteOtherSessions(userId, exceptToken)
       : this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
     return { ok: true, sessionsRemoved: removed.changes };
   }
@@ -267,32 +339,47 @@ export class AuthService implements OnModuleInit {
   private createSession(userId: string): string {
     const token = randomBytes(32).toString('hex');
     const now = Date.now();
+    // В БД лежит только SHA-256 токена: утечка базы не даёт готовых сессий.
     this.db
       .prepare('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
-      .run(token, userId, new Date(now).toISOString(), new Date(now + SESSION_TTL_MS).toISOString());
+      .run(this.hashToken(token), userId, new Date(now).toISOString(), new Date(now + SESSION_TTL_MS).toISOString());
     return token;
   }
 
   getSession(token: string): PublicUser | null {
     if (!token) return null;
-    const row = this.db
-      .prepare('SELECT u.*, s.expires_at AS session_expires FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?')
-      .get(token) as (UserRow & { session_expires: string }) | undefined;
+    const tokenHash = this.hashToken(token);
+    let storedToken = tokenHash;
+    const select = this.db.prepare(
+      'SELECT u.*, s.expires_at AS session_expires FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?',
+    );
+    let row = select.get(tokenHash) as (UserRow & { session_expires: string }) | undefined;
+
+    // Совместимость с сессиями, созданными до перехода на хэши: находим старый
+    // raw-токен и сразу перезаписываем его хэшем.
+    if (!row) {
+      row = select.get(token) as (UserRow & { session_expires: string }) | undefined;
+      if (row) {
+        this.db.prepare('UPDATE sessions SET token = ? WHERE token = ?').run(tokenHash, token);
+        storedToken = tokenHash;
+      }
+    }
     if (!row) return null;
+
     const expiresAt = new Date(row.session_expires).getTime();
     if (expiresAt < Date.now()) {
-      this.deleteSession(token);
+      this.deleteSession(storedToken);
       return null;
     }
     // Скользящий срок: активная сессия продлевается по мере использования.
     if (expiresAt - Date.now() < SLIDING_THRESHOLD_MS) {
       this.db
         .prepare('UPDATE sessions SET expires_at = ? WHERE token = ?')
-        .run(new Date(Date.now() + SESSION_TTL_MS).toISOString(), token);
+        .run(new Date(Date.now() + SESSION_TTL_MS).toISOString(), storedToken);
     }
     // Заблокированного пользователя выкидываем в тот же момент.
     if (row.status === 'blocked') {
-      this.deleteSession(token);
+      this.deleteSession(storedToken);
       return null;
     }
     return this.toPublic(row);
@@ -310,8 +397,19 @@ export class AuthService implements OnModuleInit {
     this.deleteSession(token);
   }
 
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
   private deleteSession(token: string) {
-    this.db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+    this.db.prepare('DELETE FROM sessions WHERE token IN (?, ?)').run(token, this.hashToken(token));
+  }
+
+  private deleteOtherSessions(userId: string, keepToken: string) {
+    const keepHash = this.hashToken(keepToken);
+    return this.db
+      .prepare('DELETE FROM sessions WHERE user_id = ? AND token NOT IN (?, ?)')
+      .run(userId, keepToken, keepHash);
   }
 
   private cleanExpiredSessions() {
@@ -358,9 +456,17 @@ export class AuthService implements OnModuleInit {
 
   deleteUser(id: string) {
     const row = this.requireManageableUser(id);
-    this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(row.id);
-    this.db.prepare('DELETE FROM user_state WHERE user_id = ?').run(row.id);
-    this.db.prepare('DELETE FROM users WHERE id = ?').run(row.id);
+    const remove = this.db.transaction(() => {
+      // push_log не имеет FK на users, поэтому чистим его вручную; остальные
+      // таблицы удаляем явно, чтобы не зависеть от настроек foreign_keys.
+      this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(row.id);
+      this.db.prepare('DELETE FROM user_state WHERE user_id = ?').run(row.id);
+      this.db.prepare('DELETE FROM user_state_history WHERE user_id = ?').run(row.id);
+      this.db.prepare('DELETE FROM push_subscriptions WHERE user_id = ?').run(row.id);
+      this.db.prepare('DELETE FROM push_log WHERE user_id = ?').run(row.id);
+      this.db.prepare('DELETE FROM users WHERE id = ?').run(row.id);
+    });
+    remove();
     this.lastTouchAt.delete(row.id);
     return { ok: true };
   }

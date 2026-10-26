@@ -134,6 +134,23 @@ async function main() {
   const save1 = await req('/state', { method: 'PUT', token: userToken, body: validState });
   check('save valid state', save1.status === 200, JSON.stringify(save1.data));
   check('save returns savedAt', typeof save1.data?.savedAt === 'string');
+  check('legacy raw save returns revision 1', save1.data?.revision === 1, JSON.stringify(save1.data));
+
+  // Контракт синхронизации: GET отдаёт revision, PUT принимает {state, baseRevision},
+  // а при устаревшей версии отвечает 409 с актуальными данными.
+  const fresh = await req('/state', { token: userToken });
+  check('GET state returns revision', Number.isInteger(fresh.data?.revision), JSON.stringify(fresh.data));
+  const base = fresh.data.revision;
+
+  const saveWithBase = await req('/state', { method: 'PUT', token: userToken, body: { state: validState, baseRevision: base } });
+  check('new-format save {state,baseRevision}', saveWithBase.status === 200, `${saveWithBase.status} ${JSON.stringify(saveWithBase.data)}`);
+  check('new-format save bumps revision', saveWithBase.data?.revision === base + 1, JSON.stringify(saveWithBase.data));
+
+  const stale = await req('/state', { method: 'PUT', token: userToken, body: { state: validState, baseRevision: base } });
+  check('stale baseRevision rejected with 409', stale.status === 409, String(stale.status));
+  check('409 carries current state, updatedAt and revision',
+    Boolean(stale.data?.state && typeof stale.data?.updatedAt === 'string' && stale.data?.revision === base + 1),
+    JSON.stringify(stale.data));
 
   const invalid = await req('/state', { method: 'PUT', token: userToken, body: { ...validState, tasks: [{ id: 'x', title: '', history: {} }] } });
   check('reject invalid state (400)', invalid.status === 400, `${invalid.status} ${JSON.stringify(invalid.data)}`);
@@ -176,6 +193,7 @@ async function main() {
 
   const restore = await req(`/state/history/${newest?.id}/restore`, { method: 'POST', token: userToken });
   check('restore snapshot', restore.status === 200 || restore.status === 201, JSON.stringify(restore.data));
+  check('restore returns fresh revision', Number.isInteger(restore.data?.revision), JSON.stringify(restore.data));
 
   const after = await req('/state', { token: userToken });
   check('state still readable after restore', after.data?.state?.tasks?.length >= 1);
@@ -206,6 +224,12 @@ async function main() {
 
   const badSub = await req('/push/subscribe', { method: 'POST', token: userToken2, body: { subscription: { endpoint: 'not-a-url' } } });
   check('reject invalid push subscription (400)', badSub.status === 400, String(badSub.status));
+
+  const httpSub = await req('/push/subscribe', { method: 'POST', token: userToken2, body: { subscription: { endpoint: 'http://127.0.0.1:1/push', keys: { p256dh: 'BExampleKey', auth: 'authsecret' } }, timezoneOffset: 180 } });
+  check('reject non-https push endpoint (400)', httpSub.status === 400, String(httpSub.status));
+
+  const badHostSub = await req('/push/subscribe', { method: 'POST', token: userToken2, body: { subscription: { endpoint: 'https://evil.example.com/push', keys: { p256dh: 'BExampleKey', auth: 'authsecret' } }, timezoneOffset: 180 } });
+  check('reject unknown push host (400)', badHostSub.status === 400, String(badHostSub.status));
 
   const sub = await req('/push/subscribe', { method: 'POST', token: userToken2, body: { subscription: { endpoint: 'https://127.0.0.1:1/push', keys: { p256dh: 'BExampleKeyExampleKeyExampleKeyExampleKeyExampleKeyExampleKey', auth: 'authsecret' } }, timezoneOffset: 180 } });
   check('push subscribe', sub.status === 200 || sub.status === 201, JSON.stringify(sub.data));

@@ -4,7 +4,8 @@
 // при переустановке и второй такой аккаунт создать нельзя (регистрация всегда
 // создаёт обычных пользователей, а лишние «админы» понижаются при запуске).
 //
+// Пароля по умолчанию в репозитории НЕТ: без WAKANDA_ADMIN_PASS сервер
+// генерирует случайный пароль и пишет его в server/data/admin-credentials.txt.
 // Чтобы осознанно сменить пароль — задайте переменную окружения
 // WAKANDA_ADMIN_PASS (см. server/.env.example) и перезапустите сервер.
 export const FIXED_ADMIN_USERNAME = 'waka_admin';
-export const FIXED_ADMIN_PASSWORD = 'waka_nurr_09671';

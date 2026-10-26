@@ -8,8 +8,18 @@ export function getBadges({ tasks, oneOffTasks }) {
   const activeHabits = tasks.filter((task) => !task.archived);
   const allDoneCounts = tasks.flatMap((task) => Object.values(task.history || {}).filter((value) => value === 'done').length);
   const totalDone = allDoneCounts.reduce((sum, count) => sum + count, 0);
-  const bestEver = Math.max(0, ...tasks.map((task) => getBestStreak(task.history || {}, task.schedule || [0, 1, 2, 3, 4, 5, 6])));
-  const currentBest = Math.max(0, ...activeHabits.map((task) => getStreak(task.history || {}, task.schedule || [0, 1, 2, 3, 4, 5, 6])));
+  const bestEver = Math.max(
+    0,
+    ...tasks.map((task) =>
+      getBestStreak(task.history || {}, task.schedule || [0, 1, 2, 3, 4, 5, 6], task.pauseRanges || []),
+    ),
+  );
+  const currentBest = Math.max(
+    0,
+    ...activeHabits.map((task) =>
+      getStreak(task.history || {}, task.schedule || [0, 1, 2, 3, 4, 5, 6], new Date(), task.pauseRanges || []),
+    ),
+  );
   const doneOneOffs = oneOffTasks.filter((task) => task.done).length;
 
   return [

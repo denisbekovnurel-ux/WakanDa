@@ -66,7 +66,15 @@ const VALID_STATUSES = new Set<HabitStatus>(['done', 'failed', 'empty']);
 const VALID_PRIORITIES = new Set(['high', 'normal', 'low']);
 const VALID_THEMES = new Set(['light', 'dark', 'system']);
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const TIME_RE = /^\d{2}:\d{2}$/;
+const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+/** Проверяет не только формат, но и то, что такая дата реально существует. */
+function isRealDateKey(value: string): boolean {
+  if (!DATE_RE.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+}
 
 export class StateValidationError extends Error {
   constructor(message: string) {
@@ -96,9 +104,21 @@ function readTitle(value: unknown, where: string): string {
   return title;
 }
 
-function readOptionalString(value: unknown, max: number): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  return value.slice(0, max);
+/**
+ * createdAt раньше мог быть ISO-таймстампом, а теперь это дневной ключ.
+ * Приводим оба формата к «YYYY-MM-DD», чтобы статистика не получала Invalid Date.
+ */
+function readCreatedAt(value: unknown, where: string): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string') fail(`${where}: дата создания должна быть текстом`);
+  const dateKey = value.trim().slice(0, 10);
+  if (!isRealDateKey(dateKey)) fail(`${where}: некорректная дата создания «${value.slice(0, LIMITS.timestamp)}»`);
+  return dateKey;
+}
+
+function readDateKey(value: string, where: string, label: string): string {
+  if (!isRealDateKey(value)) fail(`${where}: некорректная ${label} «${value}»`);
+  return value;
 }
 
 function readHistory(value: unknown, where: string): Record<string, HabitStatus> {
@@ -110,7 +130,7 @@ function readHistory(value: unknown, where: string): Record<string, HabitStatus>
   }
   const history: Record<string, HabitStatus> = {};
   for (const key of keys) {
-    if (!DATE_RE.test(key)) fail(`${where}: некорректная дата отметки «${key}»`);
+    readDateKey(key, where, 'дата отметки');
     const status = value[key];
     if (typeof status !== 'string' || !VALID_STATUSES.has(status as HabitStatus)) {
       fail(`${where}: неизвестный статус отметки «${String(status)}»`);
@@ -145,9 +165,11 @@ function readPauseRanges(value: unknown, where: string): Array<{ from: string; t
     const itemWhere = `${where}, пауза №${index + 1}`;
     if (!isPlainObject(item)) fail(`${itemWhere}: ожидается объект`);
     const { from, to } = item;
-    if (typeof from !== 'string' || !DATE_RE.test(from) || typeof to !== 'string' || !DATE_RE.test(to)) {
+    if (typeof from !== 'string' || typeof to !== 'string') {
       fail(`${itemWhere}: нужны даты ГГГГ-ММ-ДД (от и до)`);
     }
+    readDateKey(from, itemWhere, 'дата начала');
+    readDateKey(to, itemWhere, 'дата окончания');
     if (from > to) fail(`${itemWhere}: начало позже конца`);
     ranges.push({ from, to });
   }
@@ -170,7 +192,7 @@ function sanitizeHabit(input: unknown, index: number): AppState['tasks'][number]
     id: readId(input.id),
     title: readTitle(input.title, where),
     history: readHistory(input.history, where),
-    createdAt: readOptionalString(input.createdAt, LIMITS.timestamp),
+    createdAt: readCreatedAt(input.createdAt, where),
     schedule,
     archived: Boolean(input.archived),
     pauseRanges: readPauseRanges(input.pauseRanges, where),
@@ -183,8 +205,8 @@ function sanitizeOneOff(input: unknown, index: number): AppState['oneOffTasks'][
   let deadline: string | undefined;
   if (input.deadline !== undefined && input.deadline !== null) {
     if (typeof input.deadline !== 'string') fail(`${where}: дедлайн должен быть текстом`);
-    deadline = input.deadline.slice(0, LIMITS.deadline);
-    if (deadline && !DATE_RE.test(deadline)) fail(`${where}: дедлайн должен быть в формате ГГГГ-ММ-ДД`);
+    deadline = input.deadline.trim();
+    if (deadline) readDateKey(deadline, where, 'дата дедлайна');
   }
   let priority = 'normal';
   if (input.priority !== undefined && input.priority !== null) {
@@ -197,7 +219,7 @@ function sanitizeOneOff(input: unknown, index: number): AppState['oneOffTasks'][
     id: readId(input.id),
     title: readTitle(input.title, where),
     done: Boolean(input.done),
-    createdAt: readOptionalString(input.createdAt, LIMITS.timestamp),
+    createdAt: readCreatedAt(input.createdAt, where),
     deadline,
     priority,
   };
@@ -210,7 +232,7 @@ function readNotes(value: unknown): Record<string, string> {
   if (keys.length > LIMITS.notes) fail(`Слишком много заметок (максимум ${LIMITS.notes})`);
   const notes: Record<string, string> = {};
   for (const key of keys) {
-    if (!DATE_RE.test(key)) fail(`Некорректная дата заметки «${key}»`);
+    readDateKey(key, 'Заметки', 'дата заметки');
     const text = value[key];
     if (typeof text !== 'string') fail(`Заметка на ${key} должна быть текстом`);
     if (text.length > LIMITS.note) fail(`Заметка на ${key} слишком длинная (максимум ${LIMITS.note} символов)`);
@@ -238,10 +260,26 @@ export function sanitizeAppState(input: unknown): AppState {
   const reminderTime = typeof input.reminderTime === 'string' && TIME_RE.test(input.reminderTime) ? input.reminderTime : '20:00';
   const lastAutoBackupAt = Number(input.lastAutoBackupAt);
 
+  const taskIds = new Set<string>();
+  const tasks = tasksInput.map((item, index) => {
+    const task = sanitizeHabit(item, index);
+    if (taskIds.has(task.id)) fail(`Привычка №${index + 1}: повторяющийся id «${task.id}»`);
+    taskIds.add(task.id);
+    return task;
+  });
+
+  const oneOffIds = new Set<string>();
+  const oneOffTasks = oneOffInput.map((item, index) => {
+    const task = sanitizeOneOff(item, index);
+    if (oneOffIds.has(task.id)) fail(`Разовое дело №${index + 1}: повторяющийся id «${task.id}»`);
+    oneOffIds.add(task.id);
+    return task;
+  });
+
   return {
     version: SCHEMA_VERSION,
-    tasks: tasksInput.map(sanitizeHabit),
-    oneOffTasks: oneOffInput.map(sanitizeOneOff),
+    tasks,
+    oneOffTasks,
     notes: readNotes(input.notes),
     theme: typeof input.theme === 'string' && VALID_THEMES.has(input.theme) ? input.theme : 'system',
     reminderTime,

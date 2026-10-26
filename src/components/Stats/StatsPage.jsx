@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useToday } from '../../hooks/useToday';
 import {
   buildDayPercent,
   getBestStreak,
@@ -36,41 +37,44 @@ function heatCellTitle(day) {
 export function StatsPage() {
   const { state } = useAppStore();
   const { notify } = useFeedback();
-  const tasks = state.tasks.filter((task) => !task.archived);
+  const { today } = useToday();
+  const tasks = useMemo(() => state.tasks.filter((task) => !task.archived), [state.tasks]);
   const badges = useMemo(() => getBadges(state), [state]);
   const [monthCursor, setMonthCursor] = useState(() => {
-    const today = new Date();
-    return new Date(today.getFullYear(), today.getMonth(), 1);
+    const current = new Date();
+    return new Date(current.getFullYear(), current.getMonth(), 1);
   });
   const [shareBusy, setShareBusy] = useState(false);
 
-  const now = new Date();
   const year = monthCursor.getFullYear();
   const monthIndex = monthCursor.getMonth();
-  const isCurrentMonth = year === now.getFullYear() && monthIndex === now.getMonth();
+  const isCurrentMonth = year === today.getFullYear() && monthIndex === today.getMonth();
   const monthLabel = monthLong.format(monthCursor);
   // Для текущего месяца статистику считаем по сегодня, для прошедших — по всему месяцу.
   const referenceDate = useMemo(
-    () => (isCurrentMonth ? new Date() : new Date(year, monthIndex + 1, 0)),
-    [isCurrentMonth, year, monthIndex],
+    () => (isCurrentMonth ? today : new Date(year, monthIndex + 1, 0, 12)),
+    [isCurrentMonth, year, monthIndex, today],
   );
 
   const monthDays = useMemo(() => {
     const count = new Date(year, monthIndex + 1, 0).getDate();
     return Array.from({ length: count }, (_, index) => {
-      const date = new Date(year, monthIndex, index + 1);
+      const date = new Date(year, monthIndex, index + 1, 12);
       const key = toDateKey(date);
-      return { date, key, percent: buildDayPercent(tasks, key, date) };
+      return { date, key, percent: buildDayPercent(tasks, key, date, today) };
     });
-  }, [tasks, year, monthIndex]);
+  }, [tasks, year, monthIndex, today]);
 
-  const summary = useMemo(() => getMonthSummary(tasks, year, monthIndex), [tasks, year, monthIndex]);
+  const summary = useMemo(
+    () => getMonthSummary(tasks, year, monthIndex, isCurrentMonth ? today.getDate() : undefined, today),
+    [tasks, year, monthIndex, isCurrentMonth, today],
+  );
   const previousSummary = useMemo(() => {
-    const previous = new Date(year, monthIndex - 1, 1);
-    return getMonthSummary(tasks, previous.getFullYear(), previous.getMonth());
+    const previous = new Date(year, monthIndex - 1, 1, 12);
+    return getMonthSummary(tasks, previous.getFullYear(), previous.getMonth(), undefined, new Date(year, monthIndex, 0, 12));
   }, [tasks, year, monthIndex]);
   const delta = getPercentDelta(summary.percent, previousSummary.percent);
-  const productiveDay = getMostProductiveWeekday(tasks);
+  const productiveDay = useMemo(() => getMostProductiveWeekday(tasks, today), [tasks, today]);
 
   const trend = useMemo(() => {
     const maxX = Math.max(1, monthDays.length - 1);
@@ -84,21 +88,21 @@ export function StatsPage() {
   }, [monthDays]);
 
   const heatmap = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const todayKey = toDateKey(today);
     const first = new Date(today);
     first.setDate(first.getDate() - 364);
     first.setDate(first.getDate() - first.getDay()); // выравниваем на воскресенье
+    first.setHours(12, 0, 0, 0);
     const weeks = [];
     const cursor = new Date(first);
-    while (cursor <= today) {
+    while (toDateKey(cursor) <= todayKey) {
       const week = [];
       for (let offset = 0; offset < 7; offset += 1) {
         const date = new Date(cursor);
         date.setDate(cursor.getDate() + offset);
-        if (date > today) { week.push(null); continue; }
         const key = toDateKey(date);
-        week.push({ date, key, percent: buildDayPercent(tasks, key, date) });
+        if (key > todayKey) { week.push(null); continue; }
+        week.push({ date, key, percent: buildDayPercent(tasks, key, date, today) });
       }
       weeks.push(week);
       cursor.setDate(cursor.getDate() + 7);
@@ -111,16 +115,16 @@ export function StatsPage() {
       return '';
     });
     return { weeks, monthLabels };
-  }, [tasks]);
+  }, [tasks, today]);
 
   const records = useMemo(() => state.tasks.map((task) => ({
     id: task.id,
     title: task.title,
     archived: task.archived,
-    current: getStreak(task.history || {}, task.schedule || FULL_SCHEDULE, new Date(), task.pauseRanges || []),
+    current: getStreak(task.history || {}, task.schedule || FULL_SCHEDULE, today, task.pauseRanges || []),
     best: getBestStreak(task.history || {}, task.schedule || FULL_SCHEDULE, task.pauseRanges || []),
     stats: getHabitStats(task, referenceDate),
-  })).sort((first, second) => second.best - first.best), [state.tasks, referenceDate]);
+  })).sort((first, second) => second.best - first.best), [state.tasks, referenceDate, today]);
 
   const topHabits = useMemo(() => records
     .filter((record) => !record.archived && record.stats.monthExpected > 0)
@@ -129,8 +133,8 @@ export function StatsPage() {
     .slice(0, 5), [records]);
 
   const streakLeader = useMemo(() => tasks
-    .map((task) => ({ title: task.title, current: getStreak(task.history || {}, task.schedule || FULL_SCHEDULE, new Date(), task.pauseRanges || []) }))
-    .sort((first, second) => second.current - first.current)[0] ?? null, [tasks]);
+    .map((task) => ({ title: task.title, current: getStreak(task.history || {}, task.schedule || FULL_SCHEDULE, today, task.pauseRanges || []) }))
+    .sort((first, second) => second.current - first.current)[0] ?? null, [tasks, today]);
 
   async function handleShare() {
     if (shareBusy) return;
@@ -196,7 +200,7 @@ export function StatsPage() {
         {trend.area && <polygon className="stats-trend-area" points={trend.area} />}
         {trend.line && <polyline className="stats-trend-line" points={trend.line} vectorEffect="non-scaling-stroke" />}
       </svg>
-      <p className="stats-trend-caption">Линия тренда — доля выполненного по дням месяца.</p>
+      <p className="stats-trend-caption" style={{ display: 'none' }} />
 
       <h3 className="stats-subtitle">Карта года</h3>
       <div className="heatmap-block">

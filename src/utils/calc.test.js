@@ -81,6 +81,13 @@ describe('getHabitStats', () => {
     const stats = getHabitStats({ history });
     expect(stats.bestStreak).toBe(2);
   });
+
+  it('недопустимая createdAt не роняет статистику', () => {
+    const today = new Date(2026, 9, 15);
+    const stats = getHabitStats({ createdAt: 'вчера', history: {}, schedule: [0, 1, 2, 3, 4, 5, 6] }, today);
+    expect(stats.monthExpected).toBeGreaterThanOrEqual(0);
+    expect(Number.isNaN(stats.monthPercent)).toBe(false);
+  });
 });
 
 describe('пауза привычки', () => {
@@ -150,6 +157,13 @@ describe('buildDayPercent', () => {
     const tasks = [{ createdAt: '2026-06-01', schedule: [day.getDay()], history: {} }];
     expect(buildDayPercent(tasks, key, day)).toBeNull();
   });
+
+  it('будущие дни относительно referenceDate — null, а не 0%', () => {
+    const reference = new Date(2026, 9, 15); // 2026-10-15
+    const tasks = [{ createdAt: '2026-01-01', schedule: [0, 1, 2, 3, 4, 5, 6], history: {} }];
+    expect(buildDayPercent(tasks, '2026-10-20', new Date(2026, 9, 20), reference)).toBeNull();
+    expect(buildDayPercent(tasks, '2026-10-14', new Date(2026, 9, 14), reference)).toBe(0);
+  });
 });
 
 describe('getMonthSummary', () => {
@@ -170,6 +184,10 @@ describe('getMonthSummary', () => {
 
   it('пустой месяц — ноль без деления на ноль', () => {
     expect(getMonthSummary([], 2026, 4, 31)).toEqual({ done: 0, expected: 0, percent: 0 });
+  });
+
+  it('будущий месяц относительно referenceDate — ноль без деления на ноль', () => {
+    expect(getMonthSummary([], 2026, 11, undefined, new Date(2026, 9, 15))).toEqual({ done: 0, expected: 0, percent: 0 });
   });
 });
 

@@ -6,7 +6,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': 'http://localhost:3001',
+      // 127.0.0.1 вместо localhost: на части машин localhost резолвится в
+      // ::1, а API-сервер слушает IPv4 — прокси умирал с 502.
+      '/api': 'http://127.0.0.1:3001',
     },
   },
 })

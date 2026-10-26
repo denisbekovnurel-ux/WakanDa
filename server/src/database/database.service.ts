@@ -1,6 +1,6 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import Database from 'better-sqlite3';
-import { mkdirSync } from 'node:fs';
+import { chmodSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,11 +20,21 @@ export class DatabaseService implements OnModuleDestroy {
   constructor() {
     const override = (process.env.WAKANDA_DATA_DIR || '').trim();
     this.dataDir = override ? resolve(override) : join(dirname(fileURLToPath(import.meta.url)), '../../data');
-    mkdirSync(this.dataDir, { recursive: true });
-    this.db = new Database(join(this.dataDir, 'wakanda.db'));
+    mkdirSync(this.dataDir, { recursive: true, mode: 0o700 });
+    const dbPath = join(this.dataDir, 'wakanda.db');
+    this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
     this.createTables();
+    this.migrateColumns();
+    // На POSIX база — это личные данные пользователей. На Windows chmod
+    // фактически не меняет ACL, но и не мешает запуску.
+    try {
+      chmodSync(this.dataDir, 0o700);
+      chmodSync(dbPath, 0o600);
+    } catch {
+      // Правами могут управлять ОС/контейнер — не роняем приложение из-за этого.
+    }
   }
 
   get connection(): Database.Database {
@@ -97,7 +107,8 @@ export class DatabaseService implements OnModuleDestroy {
       CREATE TABLE IF NOT EXISTS user_state (
         user_id TEXT PRIMARY KEY,
         data TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS push_subscriptions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,6 +117,7 @@ export class DatabaseService implements OnModuleDestroy {
         p256dh TEXT NOT NULL,
         auth TEXT NOT NULL,
         timezone_offset INTEGER NOT NULL DEFAULT 0,
+        device_id TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
@@ -126,5 +138,16 @@ export class DatabaseService implements OnModuleDestroy {
       );
       CREATE INDEX IF NOT EXISTS idx_state_history_user ON user_state_history(user_id, id);
     `);
+  }
+
+  /** Добавляет колонки, появившиеся после первого релиза, не теряя данные. */
+  private migrateColumns() {
+    const addColumn = (table: string, column: string, definition: string) => {
+      const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+      if (columns.some((entry) => entry.name === column)) return;
+      this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    };
+    addColumn('user_state', 'revision', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn('push_subscriptions', 'device_id', 'TEXT');
   }
 }

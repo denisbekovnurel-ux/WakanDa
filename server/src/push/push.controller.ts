@@ -29,9 +29,12 @@ export class PushController {
   @UseGuards(AuthGuard, ThrottlerGuard)
   @Throttle({ default: { limit: 10, ttl: 60_000, getTracker: userOrIpTracker } })
   @Post('subscribe')
-  subscribe(@Req() req: AuthedRequest, @Body() body: { subscription?: unknown; timezoneOffset?: unknown }) {
+  subscribe(
+    @Req() req: AuthedRequest,
+    @Body() body: { subscription?: unknown; timezoneOffset?: unknown; deviceId?: unknown },
+  ) {
     this.ensureApproved(req);
-    return this.push.subscribe(req.user!.id, body?.subscription, body?.timezoneOffset);
+    return this.push.subscribe(req.user!.id, body?.subscription, body?.timezoneOffset, body?.deviceId);
   }
 
   @UseGuards(AuthGuard, ThrottlerGuard)

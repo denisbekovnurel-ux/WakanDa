@@ -44,6 +44,53 @@ describe('normalizeState', () => {
       { from: '2026-10-10', to: '2026-10-12' },
     ]);
   });
+
+  it('отбрасывает несуществующие даты, а не только битый формат', () => {
+    const state = normalizeState({
+      tasks: [{ title: 'Утро', history: { '2026-02-30': 'done', '2026-13-01': 'done', '2026-06-31': 'failed' } }],
+      notes: { '2025-02-29': 'невисокосный год' },
+    });
+    expect(state.tasks[0].history).toEqual({});
+    expect(state.notes).toEqual({});
+  });
+
+  it('приводит ISO-createdAt к дневному ключу', () => {
+    const state = normalizeState({
+      tasks: [{ title: 'Утро', createdAt: '2026-10-05T21:30:00.000Z' }],
+      oneOffTasks: [{ title: 'Задача', createdAt: '2026-10-05' }],
+    });
+    expect(state.tasks[0].createdAt).toBe('2026-10-05');
+    expect(state.oneOffTasks[0].createdAt).toBe('2026-10-05');
+  });
+
+  it('обнуляет битые createdAt и дедлайн', () => {
+    const state = normalizeState({
+      tasks: [{ title: 'Утро', createdAt: 'вчера' }],
+      oneOffTasks: [{ title: 'Задача', deadline: '30-10-2026' }],
+    });
+    expect(state.tasks[0].createdAt).toBeUndefined();
+    expect(state.oneOffTasks[0].deadline).toBe('');
+  });
+
+  it('даёт новый id повторяющейся записи — состояние остаётся сохраняемым', () => {
+    const state = normalizeState({
+      tasks: [
+        { id: 'same', title: 'Первая' },
+        { id: 'same', title: 'Вторая' },
+      ],
+    });
+    expect(state.tasks).toHaveLength(2);
+    expect(state.tasks[0].id).toBe('same');
+    expect(state.tasks[1].id).not.toBe('same');
+    const ids = state.tasks.map((task) => task.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('чинит битое время напоминания и lastAutoBackupAt', () => {
+    const state = normalizeState({ reminderTime: '25:99', lastAutoBackupAt: 'не число' });
+    expect(state.reminderTime).toBe('20:00');
+    expect(state.lastAutoBackupAt).toBe(0);
+  });
 });
 
 describe('assertValidBackupData', () => {

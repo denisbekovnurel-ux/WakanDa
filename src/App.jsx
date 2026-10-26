@@ -4,6 +4,8 @@ import { usePrefersDark } from './hooks/usePrefersDark';
 import { useAppStore } from './store/AppStore';
 import { useReminders } from './hooks/useReminders';
 import { pluralize } from './utils/pluralize';
+import { isPaused } from './utils/calc';
+import { TIMINGS } from './config/timings';
 import { HabitManager } from './components/HabitManager';
 import { BackupControls } from './components/BackupControls';
 import { StateHistory } from './components/StateHistory';
@@ -57,7 +59,14 @@ function App() {
   const { today, todayKey } = useToday();
   const activeTasks = tasks.filter((task) => !task.archived);
   const completedToday = activeTasks.filter((task) => task.history?.[todayKey] === 'done').length;
-  const pendingHabits = Math.max(0, activeTasks.filter((task) => (!task.schedule || task.schedule.includes(today.getDay())) && task.history?.[todayKey] !== 'done').length);
+  // Не напоминаем о привычках, которые сегодня не по расписанию, на паузе
+  // или ещё не существовали: счётчик в уведомлении должен быть честным.
+  const pendingHabits = Math.max(0, activeTasks.filter((task) => {
+    if (task.schedule && !task.schedule.includes(today.getDay())) return false;
+    if (isPaused(task, todayKey)) return false;
+    if (task.createdAt && task.createdAt > todayKey) return false;
+    return task.history?.[todayKey] !== 'done';
+  }).length);
   const badges = useMemo(() => getBadges(state), [state]);
   const unlockedCount = badges.filter((badge) => badge.unlocked).length;
 
@@ -81,9 +90,27 @@ function App() {
   useEffect(() => {
     const interval = window.setInterval(() => {
       setQuoteIndex((current) => (current + 1) % quotes.length);
-    }, 20000);
+    }, TIMINGS.quoteRotateMs);
     return () => window.clearInterval(interval);
   }, []);
+
+  // Разрешение уже выдано и напоминания включены — обновляем подписку на сервере:
+  // иначе после переезда в другой часовой пояс сервер шлёт уведомления по
+  // старому смещению, а устройство неизвестно для защиты от чужих подписок.
+  useEffect(() => {
+    if (!token || !reminderEnabled) return undefined;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return undefined;
+    let cancelled = false;
+    ensurePushSubscription(token)
+      .then((result) => {
+        if (cancelled) return;
+        if (!result.ok && result.reason === 'error') {
+          console.warn('Не удалось обновить push-подписку:', result.error);
+        }
+      })
+      .catch((error) => { if (!cancelled) console.warn('Не удалось обновить push-подписку:', error); });
+    return () => { cancelled = true; };
+  }, [token, reminderEnabled]);
 
   async function toggleReminders() {
     if (reminderEnabled) {
@@ -109,6 +136,7 @@ function App() {
     try {
       const result = await sendTestPush(token);
       if (result?.sent > 0) notify('Тестовое уведомление отправлено — проверь шторку.', { tone: 'success' });
+      else if (result?.failed > 0) notify('Подписка есть, но сервер не смог доставить уведомление. Попробуй позже или переподпиши уведомления.', { tone: 'error' });
       else notify('Подписка на уведомления не найдена. Включи напоминания и разреши уведомления в браузере.', { tone: 'warning' });
     } catch (error) {
       notify(error?.message || 'Не удалось отправить тестовое уведомление.', { tone: 'error' });
@@ -130,7 +158,7 @@ function App() {
         <nav className="main-nav" aria-label="Основная навигация">
           {Object.entries(pages).filter(([key]) => key !== 'admin' || isAdmin).map(([key, item]) => <a key={key} href={`#${key}`} className={page === key ? 'is-active' : ''} aria-current={page === key ? 'page' : undefined}>{item.label}</a>)}
         </nav>
-        <span className="pending-reminder" aria-live="polite">{pendingHabits ? `ОСТАЛОСЬ ОТМЕТИТЬ ${pendingHabits}` : 'ВСЁ ОТМЕЧЕНО'}</span>
+        {page === 'home' && <span className="pending-reminder" aria-live="polite">{pendingHabits ? `ОСТАЛОСЬ ОТМЕТИТЬ ${pendingHabits}` : 'ВСЁ ОТМЕЧЕНО'}</span>}
         <div className="user-menu">
           <span className="user-chip" title={user?.username}>{user?.username}<span className="user-chip-role">{isAdmin ? 'ADMIN' : 'USER'}</span></span>
           <button className="logout-button" type="button" onClick={() => setShowPasswordDialog(true)} title="Пароль и сессии">Пароль</button>
@@ -143,7 +171,6 @@ function App() {
       <main className="page-content">
         <section className={`page-hero page-hero--${page}`} style={{ '--page-photo': `url('/images/${currentPage.image}')` }} aria-labelledby="page-title">
           <div className="page-hero-copy"><p className="eyebrow">{currentPage.eyebrow}</p><h1 id="page-title">{currentPage.title}</h1><p className="page-hero-description">{currentPage.description}</p></div>
-          <div className="photo-slot" role="img" aria-label={`Место для фонового фото страницы ${currentPage.en}`}><span className="photo-slot-cross" aria-hidden="true">✳</span><span className="photo-slot-label">IMAGE SLOT <span>public/images/{currentPage.image}</span></span></div>
           <div className="hero-watermark" aria-hidden="true">{currentPage.ko}</div>
         </section>
 

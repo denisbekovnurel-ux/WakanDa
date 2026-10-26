@@ -1,14 +1,34 @@
 import { fetchPushKey, subscribePush, unsubscribePush } from '../api/pushApi';
 
+const DEVICE_KEY = 'wakanda-push-device-id';
+const DEVICE_ID_RE = /^[A-Za-z0-9_-]{8,128}$/;
+
 /** Поддерживает ли браузер Web Push (не только Notification). */
 export function pushSupported() {
   return (
-    typeof navigator !== 'undefined' &&
-    'serviceWorker' in navigator &&
-    'PushManager' in window &&
     typeof window !== 'undefined' &&
-    'Notification' in window
+    'PushManager' in window &&
+    'Notification' in window &&
+    typeof navigator !== 'undefined' &&
+    'serviceWorker' in navigator
   );
+}
+
+/** Стабильный идентификатор этого браузера: нужен, чтобы не отдать чужую подписку. */
+function getDeviceId() {
+  try {
+    const saved = localStorage.getItem(DEVICE_KEY);
+    if (saved && DEVICE_ID_RE.test(saved)) return saved;
+  } catch {
+    // приватный режим/запрет storage — ниже сгенерируем временный id
+  }
+  const id = crypto.randomUUID();
+  try {
+    localStorage.setItem(DEVICE_KEY, id);
+  } catch {
+    // id проживёт до перезагрузки; подписка всё равно обновится на сервере
+  }
+  return id;
 }
 
 /** VAPID-ключ приходит в base64url — PushManager ждёт Uint8Array. */
@@ -28,6 +48,10 @@ function urlBase64ToUint8Array(base64String) {
 export async function ensurePushSubscription(token) {
   if (!pushSupported()) return { ok: false, reason: 'unsupported' };
   try {
+    // В dev service worker не регистрируется. Без этой проверки `ready`
+    // висел бы вечно, а не возвращал «не поддерживается».
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    if (!registrations.length) return { ok: false, reason: 'unsupported' };
     const registration = await navigator.serviceWorker.ready;
     if (!registration.pushManager) return { ok: false, reason: 'unsupported' };
     const { publicKey } = await fetchPushKey();
@@ -39,7 +63,7 @@ export async function ensurePushSubscription(token) {
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       });
     }
-    await subscribePush(token, subscription.toJSON(), -new Date().getTimezoneOffset());
+    await subscribePush(token, subscription.toJSON(), -new Date().getTimezoneOffset(), getDeviceId());
     return { ok: true };
   } catch (error) {
     return { ok: false, reason: 'error', error };
@@ -50,6 +74,8 @@ export async function ensurePushSubscription(token) {
 export async function disablePushSubscription(token) {
   if (!pushSupported()) return { ok: true };
   try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    if (!registrations.length) return { ok: true };
     const registration = await navigator.serviceWorker.ready;
     const subscription = await registration.pushManager.getSubscription();
     if (!subscription) return { ok: true };

@@ -83,7 +83,7 @@ export function OneOffList({ tasks, todayKey }) {
         {task.deadline && <time className={`one-off-deadline ${!task.done && task.deadline < todayKey ? 'is-overdue' : ''}`} dateTime={task.deadline}>{task.deadline < todayKey && !task.done ? 'ПРОСРОЧЕНО · ' : 'ДО · '}{task.deadline}</time>}
         {task.done && <span className="one-off-complete-label">ЗАКРЫТА</span>}
         {!task.done && <RenameOneOff task={task} actions={actions} />}
-        {!task.done && sortMode === 'manual' && (
+        {!task.done && sortMode === 'manual' && filter === 'all' && (
           <span className="order-buttons">
             <button type="button" className="order-button" disabled={index === 0} onClick={() => actions.moveOneOff(task.id, -1)} aria-label={`Поднять ${task.title}`}>↑</button>
             <button type="button" className="order-button" disabled={index === group.length - 1} onClick={() => actions.moveOneOff(task.id, 1)} aria-label={`Опустить ${task.title}`}>↓</button>

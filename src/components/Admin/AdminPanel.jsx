@@ -8,6 +8,7 @@ import {
   apiAdminSetStatus,
   apiAdminUsers,
 } from '../../api/authApi';
+import { TIMINGS } from '../../config/timings';
 
 const STATUS_LABELS = { pending: 'Ожидает', approved: 'Одобрен', blocked: 'Заблокирован' };
 const dateTimeFormatter = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -46,7 +47,7 @@ export function AdminPanel() {
     (async () => {
       if (!cancelled) await load();
     })();
-    const timer = window.setInterval(load, 15000);
+    const timer = window.setInterval(load, TIMINGS.adminUsersPollMs);
     return () => {
       cancelled = true;
       window.clearInterval(timer);

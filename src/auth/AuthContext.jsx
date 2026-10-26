@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { apiHeartbeat, apiLogin, apiLogout, apiMe, apiRegister } from '../api/authApi';
+import { TIMINGS } from '../config/timings';
 
 const TOKEN_KEY = 'wakanda_auth_token';
 const AuthContext = createContext(null);
@@ -30,8 +31,11 @@ export function AuthProvider({ children }) {
       try {
         const data = await apiMe(token);
         if (!cancelled) setUser(data.user);
-      } catch {
-        if (!cancelled) persist('', null);
+      } catch (error) {
+        // Сетевой сбой — не повод разлогинивать: токен останется, и при
+        // следующем запуске/онлайне сессия проверится снова. Выходим только
+        // если сервер явно отверг токен.
+        if (!cancelled && (error.status === 401 || error.status === 403)) persist('', null);
       } finally {
         if (!cancelled) setReady(true);
       }
@@ -50,10 +54,10 @@ export function AuthProvider({ children }) {
       try {
         const data = await apiMe(token);
         setUser(data.user);
-      } catch {
-        persist('', null);
+      } catch (error) {
+        if (error.status === 401 || error.status === 403) persist('', null);
       }
-    }, 5000);
+    }, TIMINGS.authPendingPollMs);
     return () => window.clearInterval(timer);
   }, [token, status, persist]);
 
@@ -70,7 +74,7 @@ export function AuthProvider({ children }) {
       }
     };
     ping();
-    const timer = window.setInterval(ping, 45000);
+    const timer = window.setInterval(ping, TIMINGS.authHeartbeatMs);
     return () => {
       active = false;
       window.clearInterval(timer);

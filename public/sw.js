@@ -33,8 +33,12 @@ self.addEventListener('fetch', (event) => {
 
   if (request.mode === 'navigate') {
     event.respondWith(fetch(request).then((response) => {
-      const copy = response.clone();
-      caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy));
+      // Кэшируем только успешный ответ: страницу 500/404 иначе запомнит бы
+      // как «официальный» офлайн-шелл, и её же отдал бы из кэша.
+      if (response && response.ok) {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy));
+      }
       return response;
     }).catch(() => caches.match('/index.html')));
     return;
