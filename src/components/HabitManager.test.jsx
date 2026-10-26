@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HabitManager } from './HabitManager.jsx';
+import { HabitManager } from './HabitManager';
 
 // Компонент сам берёт привычки из стора и дату из контекста — пропсов больше нет.
 // Проверяем именно это: список из стора, валидацию формы и действия.

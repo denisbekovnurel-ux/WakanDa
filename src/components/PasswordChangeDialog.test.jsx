@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PasswordChangeDialog } from './PasswordChangeDialog.jsx';
+import { PasswordChangeDialog } from './PasswordChangeDialog';
 import { apiChangePassword, apiLogoutEverywhere } from '../api/authApi';
 
 vi.mock('../auth/AuthContext', () => ({

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ErrorBoundary } from './ErrorBoundary.jsx';
+import { ErrorBoundary } from './ErrorBoundary';
 
 // Страховка от «белого экрана»: ошибка рендера должна превращаться в
 // понятный экран, а «Попробовать снова» — возвращать приложение к жизни.

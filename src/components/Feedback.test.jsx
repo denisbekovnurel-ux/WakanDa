@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FeedbackProvider, FeedbackViewport } from './Feedback.jsx';
+import { FeedbackProvider, FeedbackViewport } from './Feedback';
 import { useFeedback } from './FeedbackContext';
 import { TIMINGS } from '../config/timings';
 

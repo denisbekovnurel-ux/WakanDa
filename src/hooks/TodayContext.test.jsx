@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { TodayProvider } from './TodayProvider.jsx';
+import { TodayProvider } from './TodayProvider';
 import { useToday } from './TodayContext';
 
 // Одна дата на всё приложение: без дублирующихся таймеров и без пропсов.

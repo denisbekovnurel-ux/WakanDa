@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MonthGrid } from './MonthGrid.jsx';
+import { MonthGrid } from './MonthGrid';
 import { STATUS } from '../utils/calc';
 
 // Календарь раньше получал активные привычки пропсом из App.

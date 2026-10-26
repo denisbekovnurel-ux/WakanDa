@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AuthScreen } from './AuthScreen.jsx';
+import { AuthScreen } from './AuthScreen';
 
 // Форма входа и регистрации проверяется теми же zod-схемами, что и на сервере.
 

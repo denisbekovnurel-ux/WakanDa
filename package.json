@@ -14,7 +14,8 @@
     "test": "vitest run",
     "test:server": "npm test --prefix server",
     "test:e2e": "npm run test:e2e --prefix server",
-    "typecheck": "npm run typecheck --prefix server",
+    "typecheck": "npm run typecheck:web && npm run typecheck --prefix server",
+    "typecheck:web": "tsc --noEmit",
     "check": "npm run lint && npm run test && npm run typecheck && npm run build",
     "postbuild": "node scripts/inject-sw-version.mjs"
   },
@@ -37,6 +38,8 @@
     "globals": "^17.12.0",
     "jsdom": "^30.1.3",
     "sharp": "^0.35.5",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.0",
     "vite": "^8.3.0",
     "vitest": "^5.0.3"
   }
