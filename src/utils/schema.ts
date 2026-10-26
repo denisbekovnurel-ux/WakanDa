@@ -2,6 +2,7 @@
 // из localStorage или из файла бэкапа, проходит через normalizeState.
 
 import type { AppState, Habit, HabitStatus, OneOffPriority, OneOffTask, PauseRange, Theme } from '../types';
+import { translate } from '../i18n';
 
 export const SCHEMA_VERSION = 2;
 
@@ -151,16 +152,16 @@ export function normalizeState(input: unknown): AppState {
  * на наш формат — бросаем понятную ошибку, а не роняем рендер.
  */
 export function assertValidBackupData(data: unknown): true {
-  if (!isPlainObject(data)) throw new Error('Некорректное содержимое файла.');
+  if (!isPlainObject(data)) throw new Error(translate('Некорректное содержимое файла.'));
   for (const key of ['tasks', 'oneOffTasks'] as const) {
-    if (!Array.isArray(data[key])) throw new Error(`Поле «${key}» в бэкапе должно быть списком.`);
+    if (!Array.isArray(data[key])) throw new Error(translate('Поле «{field}» в бэкапе должно быть списком.', { field: key }));
   }
   const tasks = data.tasks as unknown[];
   const oneOffTasks = data.oneOffTasks as unknown[];
   const hasBrokenHabit = tasks.some((task) => !isPlainObject(task) || typeof task.title !== 'string');
   const hasBrokenOneOff = oneOffTasks.some((task) => !isPlainObject(task) || typeof task.title !== 'string');
   if (hasBrokenHabit || hasBrokenOneOff) {
-    throw new Error('В бэкапе есть повреждённые записи.');
+    throw new Error(translate('В бэкапе есть повреждённые записи.'));
   }
   return true;
 }

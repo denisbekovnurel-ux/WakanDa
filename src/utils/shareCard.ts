@@ -1,6 +1,8 @@
 // Канвас-карточка прогресса за месяц: картинкой удобно делиться в соцсетях.
 // Рисуем без внешних зависимостей — только Canvas 2D.
 
+import { translate } from '../i18n';
+
 const WEEKDAY = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 
 export interface ProgressCardDay {
@@ -47,7 +49,7 @@ export function createProgressCard({ monthLabel, percent, done, expected, days =
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d');
-  if (!ctx) return Promise.reject(new Error('Canvas недоступен'));
+  if (!ctx) return Promise.reject(new Error(translate('Canvas недоступен')));
 
   // Фон
   const bg = ctx.createLinearGradient(0, 0, size, size);
@@ -73,7 +75,7 @@ export function createProgressCard({ monthLabel, percent, done, expected, days =
   ctx.fillText('WakanDa', 108, 76);
   ctx.fillStyle = '#a393bd';
   ctx.font = '600 26px "DM Sans", sans-serif';
-  ctx.fillText('와칸다 · дисциплина в цифрах', 110, 130);
+  ctx.fillText(translate('와칸다 · дисциплина в цифрах'), 110, 130);
 
   // Месяц
   ctx.textAlign = 'right';
@@ -88,7 +90,7 @@ export function createProgressCard({ monthLabel, percent, done, expected, days =
   ctx.fillText(`${percent}%`, 72, 196);
   ctx.fillStyle = '#b8aec0';
   ctx.font = '600 32px "DM Sans", sans-serif';
-  ctx.fillText(`выполнено ${done} из ${expected}`, 82, 420);
+  ctx.fillText(translate('выполнено {done} из {expected}', { done, expected }), 82, 420);
 
   // Календарь месяца. Размер ячейки считаем от числа реальных недель (4–6),
   // иначе сетка уезжала за нижний край карточки: в октябре 2026 подвал
@@ -111,7 +113,7 @@ export function createProgressCard({ monthLabel, percent, done, expected, days =
   ctx.font = '700 24px "DM Sans", sans-serif';
   for (let col = 0; col < cols; col++) {
     ctx.fillStyle = '#7d7488';
-    ctx.fillText(WEEKDAY[col].toUpperCase(), gridLeft + col * (cell + gap) + cell / 2, gridTop - 26);
+    ctx.fillText(translate(WEEKDAY[col]).toUpperCase(), gridLeft + col * (cell + gap) + cell / 2, gridTop - 26);
   }
 
   // Первый день месяца определяет смещение в сетке (неделя от воскресенья).
@@ -136,15 +138,15 @@ export function createProgressCard({ monthLabel, percent, done, expected, days =
   if (streakHabit) {
     ctx.fillStyle = '#c9bccf';
     ctx.font = '600 26px "DM Sans", sans-serif';
-    ctx.fillText(`${streakHabit.title} · серия ${streakHabit.current} дн.`, 80, footerY);
+    ctx.fillText(`${streakHabit.title} · ${translate('серия {count} дн.', { count: streakHabit.current })}`, 80, footerY);
   }
   ctx.textAlign = 'right';
   ctx.fillStyle = '#7d7488';
   ctx.font = '600 24px "DM Sans", sans-serif';
-  ctx.fillText('WakanDa · привычки', size - 80, footerY);
+  ctx.fillText(translate('WakanDa · привычки'), size - 80, footerY);
 
   return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Не удалось собрать картинку'))), 'image/png');
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error(translate('Не удалось собрать картинку')))), 'image/png');
   });
 }
 
@@ -172,7 +174,7 @@ export async function shareOrDownload(blob: Blob, filename: string, text: string
 
   if (canShareFiles && shareNavigator.share) {
     try {
-      await shareNavigator.share({ files: [file], title: 'Мой прогресс WakanDa', text });
+      await shareNavigator.share({ files: [file], title: translate('Мой прогресс WakanDa'), text });
       return 'shared';
     } catch (error) {
       // Пользователь просто закрыл меню — не считаем это ошибкой.

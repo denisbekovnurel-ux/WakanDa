@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isRealDateKey } from '../utils/schema';
+import { translate } from '../i18n';
 
 /**
  * Схемы форм на zod — одно место, где описаны требования к вводу.
@@ -80,5 +81,5 @@ interface ValidationResultLike {
 /** Первое сообщение об ошибке — в интерфейсе показываем одну строку, а не список. */
 export function firstError(result: ValidationResultLike): string {
   if (result.success) return '';
-  return result.error?.issues[0]?.message || 'Проверьте введённые данные.';
+  return translate(result.error?.issues[0]?.message || 'Проверьте введённые данные.');
 }

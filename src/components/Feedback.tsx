@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { FeedbackContext, useFeedback } from './FeedbackContext';
 import { TIMINGS } from '../config/timings';
+import { useI18n } from '../i18n';
 import type { DialogOptions, FeedbackContextValue, NotifyOptions, Toast, ToastTone } from '../types';
 
 const MAX_TOASTS = 4;
@@ -97,16 +98,18 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
 }
 
 function ToastBlock({ toast, onClose }: { toast: Toast; onClose: (id: number) => void }) {
+  const { t } = useI18n();
   return (
     <div className={`feedback-toast feedback-toast--${toast.tone}`} role={toast.tone === 'error' ? 'alert' : 'status'}>
-      <button type="button" className="feedback-toast-close" onClick={() => onClose(toast.id)} aria-label="Закрыть уведомление">×</button>
-      {toast.title && <p className="feedback-toast-title">{toast.title}</p>}
-      <p className="feedback-toast-text">{toast.text}</p>
+      <button type="button" className="feedback-toast-close" onClick={() => onClose(toast.id)} aria-label={t('Закрыть уведомление')}>×</button>
+      {toast.title && <p className="feedback-toast-title">{t(toast.title)}</p>}
+      <p className="feedback-toast-text">{t(toast.text)}</p>
     </div>
   );
 }
 
 function FeedbackDialog({ dialog, onFinish }: { dialog: DialogOptions; onFinish: (result: unknown) => void }) {
+  const { t } = useI18n();
   const [value, setValue] = useState(dialog.value ?? '');
   const inputRef = useRef<HTMLInputElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
@@ -146,13 +149,13 @@ function FeedbackDialog({ dialog, onFinish }: { dialog: DialogOptions; onFinish:
   return (
     <div className="sync-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) cancel(); }}>
       <div className="sync-dialog feedback-dialog" role="dialog" aria-modal="true" aria-labelledby="feedback-dialog-title" aria-describedby="feedback-dialog-message">
-        <p className="eyebrow">{isPrompt ? 'ВВОД ДАННЫХ' : 'ПОДТВЕРЖДЕНИЕ'}</p>
-        <h2 id="feedback-dialog-title">{dialog.title}</h2>
-        {dialog.message && <p id="feedback-dialog-message" className="section-description feedback-dialog-message">{dialog.message}</p>}
+        <p className="eyebrow">{isPrompt ? t('ВВОД ДАННЫХ') : t('ПОДТВЕРЖДЕНИЕ')}</p>
+        <h2 id="feedback-dialog-title">{t(dialog.title)}</h2>
+        {dialog.message && <p id="feedback-dialog-message" className="section-description feedback-dialog-message">{t(dialog.message)}</p>}
         {isPrompt ? (
           <form className="feedback-dialog-form" onSubmit={submit}>
             <label className="feedback-dialog-field">
-              <span>{dialog.inputLabel}</span>
+              <span>{t(dialog.inputLabel || 'Значение')}</span>
               <input
                 ref={inputRef}
                 type={dialog.inputType || 'text'}
@@ -164,14 +167,14 @@ function FeedbackDialog({ dialog, onFinish }: { dialog: DialogOptions; onFinish:
               />
             </label>
             <div className="feedback-dialog-actions">
-              <button type="button" className="button button--light" onClick={cancel}>{dialog.cancelText}</button>
-              <button type="submit" className="button button--red" disabled={!value.trim()}>{dialog.confirmText}</button>
+              <button type="button" className="button button--light" onClick={cancel}>{t(dialog.cancelText || 'Отмена')}</button>
+              <button type="submit" className="button button--red" disabled={!value.trim()}>{t(dialog.confirmText || 'Сохранить')}</button>
             </div>
           </form>
         ) : (
           <div className="feedback-dialog-actions">
-            <button type="button" className="button button--light" onClick={cancel}>{dialog.cancelText}</button>
-            <button ref={confirmRef} type="button" className="button button--red" onClick={() => onFinish(true)}>{dialog.confirmText}</button>
+            <button type="button" className="button button--light" onClick={cancel}>{t(dialog.cancelText || 'Отмена')}</button>
+            <button ref={confirmRef} type="button" className="button button--red" onClick={() => onFinish(true)}>{t(dialog.confirmText || 'Подтвердить')}</button>
           </div>
         )}
       </div>

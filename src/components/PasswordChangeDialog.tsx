@@ -4,6 +4,7 @@ import { apiChangePassword, apiLogoutEverywhere } from '../api/authApi';
 import { useAuth } from '../auth/AuthContext';
 import { firstError, passwordChangeSchema } from '../validation/schemas';
 import { errorMessage } from '../utils/errors';
+import { useI18n } from '../i18n';
 
 interface DialogNote {
   ok: boolean;
@@ -15,6 +16,7 @@ interface DialogNote {
  */
 export function PasswordChangeDialog({ onClose }: { onClose: () => void }) {
   const { token } = useAuth();
+  const { t } = useI18n();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -44,7 +46,7 @@ export function PasswordChangeDialog({ onClose }: { onClose: () => void }) {
     setBusy(true);
     try {
       await apiChangePassword(token, parsed.data.currentPassword, parsed.data.newPassword);
-      setNote({ ok: true, text: 'Пароль изменён. Сессии на других устройствах завершены.' });
+      setNote({ ok: true, text: t('Пароль изменён. Сессии на других устройствах завершены.') });
       setCurrent('');
       setNext('');
       setConfirm('');
@@ -60,7 +62,7 @@ export function PasswordChangeDialog({ onClose }: { onClose: () => void }) {
     setNote(null);
     try {
       const result = await apiLogoutEverywhere(token);
-      setNote({ ok: true, text: `Завершено сессий: ${result.sessionsRemoved}.` });
+      setNote({ ok: true, text: t('Завершено сессий: {count}.', { count: result.sessionsRemoved }) });
     } catch (error) {
       setNote({ ok: false, text: errorMessage(error) });
     } finally {
@@ -71,20 +73,20 @@ export function PasswordChangeDialog({ onClose }: { onClose: () => void }) {
   return (
     <div className="sync-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="password-dialog-title" onClick={onClose}>
       <div className="sync-dialog" onClick={(event) => event.stopPropagation()} ref={dialogRef} tabIndex={-1} style={{ outline: 'none' }}>
-        <p className="eyebrow">АККАУНТ</p>
-        <h2 id="password-dialog-title">Пароль и сессии</h2>
-        <p className="section-description">Смена пароля «разлогинивает» все остальные устройства — на этом останешься ты.</p>
+        <p className="eyebrow">{t('АККАУНТ')}</p>
+        <h2 id="password-dialog-title">{t('Пароль и сессии')}</h2>
+        <p className="section-description">{t('Смена пароля «разлогинивает» все остальные устройства — на этом останешься ты.')}</p>
         <form className="auth-form" onSubmit={handleSubmit} noValidate>
-          <label><span>Текущий пароль</span><input type="password" autoComplete="current-password" required value={current} onChange={(event) => setCurrent(event.target.value)} /></label>
-          <label><span>Новый пароль (от 6 символов)</span><input type="password" autoComplete="new-password" required value={next} onChange={(event) => setNext(event.target.value)} /></label>
-          <label><span>Повтори новый пароль</span><input type="password" autoComplete="new-password" required value={confirm} onChange={(event) => setConfirm(event.target.value)} /></label>
-          {note && <p role={note.ok ? 'status' : 'alert'} style={{ color: note.ok ? '#4c9c57' : '#e0a14a', fontSize: '.72rem', margin: 0 }}>{note.text}</p>}
+          <label><span>{t('Текущий пароль')}</span><input type="password" autoComplete="current-password" required value={current} onChange={(event) => setCurrent(event.target.value)} /></label>
+          <label><span>{t('Новый пароль (от 6 символов)')}</span><input type="password" autoComplete="new-password" required value={next} onChange={(event) => setNext(event.target.value)} /></label>
+          <label><span>{t('Повтори новый пароль')}</span><input type="password" autoComplete="new-password" required value={confirm} onChange={(event) => setConfirm(event.target.value)} /></label>
+          {note && <p role={note.ok ? 'status' : 'alert'} style={{ color: note.ok ? '#4c9c57' : '#e0a14a', fontSize: '.72rem', margin: 0 }}>{t(note.text)}</p>}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button className="button button--light" type="submit" disabled={busy}>{busy ? 'Сохраняю…' : 'Сохранить новый пароль'}</button>
-            <button className="text-button" type="button" onClick={handleLogoutEverywhere} disabled={busy} style={{ fontSize: '.72rem' }}>Завершить сессии на других устройствах</button>
+            <button className="button button--light" type="submit" disabled={busy}>{busy ? t('Сохраняю…') : t('Сохранить новый пароль')}</button>
+            <button className="text-button" type="button" onClick={handleLogoutEverywhere} disabled={busy} style={{ fontSize: '.72rem' }}>{t('Завершить сессии на других устройствах')}</button>
           </div>
         </form>
-        <p style={{ marginTop: 14 }}><button className="text-button" type="button" onClick={onClose}>Закрыть</button></p>
+        <p style={{ marginTop: 14 }}><button className="text-button" type="button" onClick={onClose}>{t('Закрыть')}</button></p>
       </div>
     </div>
   );

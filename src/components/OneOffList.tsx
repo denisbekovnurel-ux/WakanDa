@@ -4,15 +4,18 @@ import { useAppStore } from '../store/AppStore';
 import { useToday } from '../hooks/TodayContext';
 import { firstError, oneOffFormSchema } from '../validation/schemas';
 import { useFeedback } from './FeedbackContext';
+import { formatDate, useI18n } from '../i18n';
 import type { OneOffPriority, OneOffTask } from '../types';
 
 const priorityRank: Record<OneOffPriority, number> = { high: 0, normal: 1, low: 2 };
+const deadlineOptions: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
 
 type TaskFilter = 'all' | 'overdue' | 'high';
 type SortMode = 'auto' | 'manual';
 
 function RenameOneOff({ task }: { task: OneOffTask }) {
   const { actions } = useAppStore();
+  const { t } = useI18n();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(task.title);
 
@@ -26,19 +29,20 @@ function RenameOneOff({ task }: { task: OneOffTask }) {
   }
 
   if (!editing) {
-    return <button type="button" className="text-button" onClick={() => { setDraft(task.title); setEditing(true); }} aria-label={`Переименовать ${task.title}`}>✎</button>;
+    return <button type="button" className="text-button" onClick={() => { setDraft(task.title); setEditing(true); }} aria-label={t('Переименовать {title}', { title: task.title })}>✎</button>;
   }
   return (
     <span className="rename-inline">
-      <input type="text" value={draft} maxLength={100} aria-label="Новое название задачи" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') save(); if (event.key === 'Escape') setEditing(false); }} autoFocus />
-      <button type="button" className="text-button" onClick={save}>Сохранить</button>
-      <button type="button" className="text-button" onClick={() => setEditing(false)}>Отмена</button>
+      <input type="text" value={draft} maxLength={100} aria-label={t('Новое название задачи')} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') save(); if (event.key === 'Escape') setEditing(false); }} autoFocus />
+      <button type="button" className="text-button" onClick={save}>{t('Сохранить')}</button>
+      <button type="button" className="text-button" onClick={() => setEditing(false)}>{t('Отмена')}</button>
     </span>
   );
 }
 
 export function OneOffList() {
   const { state, actions } = useAppStore();
+  const { t } = useI18n();
   const { todayKey } = useToday();
   const tasks = state.oneOffTasks;
   const { confirm, notify } = useFeedback();
@@ -82,32 +86,32 @@ export function OneOffList() {
 
   async function removeTask(task: OneOffTask) {
     const confirmed = await confirm({
-      title: 'Удалить задачу?',
-      message: `Разовая задача «${task.title}» будет удалена безвозвратно.`,
-      confirmText: 'Удалить',
+      title: t('Удалить задачу?'),
+      message: t('Разовая задача «{title}» будет удалена безвозвратно.', { title: task.title }),
+      confirmText: t('Удалить'),
       tone: 'danger',
     });
     if (!confirmed) return;
     actions.deleteOneOff(task.id);
-    notify(`Задача «${task.title}» удалена.`, { tone: 'success' });
+    notify(t('Задача «{title}» удалена.', { title: task.title }), { tone: 'success' });
   }
 
   function renderTask(task: OneOffTask, index: number, group: OneOffTask[]) {
     return (
       <li className={`one-off-item ${task.done ? 'one-off-item--done' : ''}`} key={task.id}>
-        <button className="one-off-check" type="button" onClick={() => actions.toggleOneOff(task.id)} aria-label={`${task.done ? 'Вернуть в активные' : 'Отметить выполненной'}: ${task.title}`} aria-pressed={task.done}>{task.done ? '✓' : ''}</button>
+        <button className="one-off-check" type="button" onClick={() => actions.toggleOneOff(task.id)} aria-label={`${task.done ? t('Вернуть в активные') : t('Отметить выполненной')}: ${task.title}`} aria-pressed={task.done}>{task.done ? '✓' : ''}</button>
         <span className="one-off-title">{task.title}</span>
-        {task.priority && <span className={`one-off-priority one-off-priority--${task.priority}`}>{task.priority === 'high' ? 'ВЫСОКИЙ' : task.priority === 'low' ? 'НИЗКИЙ' : 'ОБЫЧНЫЙ'}</span>}
-        {task.deadline && <time className={`one-off-deadline ${!task.done && task.deadline < todayKey ? 'is-overdue' : ''}`} dateTime={task.deadline}>{task.deadline < todayKey && !task.done ? 'ПРОСРОЧЕНО · ' : 'ДО · '}{task.deadline}</time>}
-        {task.done && <span className="one-off-complete-label">ЗАКРЫТА</span>}
+        {task.priority && <span className={`one-off-priority one-off-priority--${task.priority}`}>{task.priority === 'high' ? t('ВЫСОКИЙ') : task.priority === 'low' ? t('НИЗКИЙ') : t('ОБЫЧНЫЙ')}</span>}
+        {task.deadline && <time className={`one-off-deadline ${!task.done && task.deadline < todayKey ? 'is-overdue' : ''}`} dateTime={task.deadline}>{task.deadline < todayKey && !task.done ? `${t('ПРОСРОЧЕНО')} · ` : `${t('ДО')} · `}{formatDate(new Date(`${task.deadline}T00:00:00`), deadlineOptions)}</time>}
+        {task.done && <span className="one-off-complete-label">{t('ЗАКРЫТА')}</span>}
         {!task.done && <RenameOneOff task={task} />}
         {!task.done && sortMode === 'manual' && filter === 'all' && (
           <span className="order-buttons">
-            <button type="button" className="order-button" disabled={index === 0} onClick={() => actions.moveOneOff(task.id, -1)} aria-label={`Поднять ${task.title}`}>↑</button>
-            <button type="button" className="order-button" disabled={index === group.length - 1} onClick={() => actions.moveOneOff(task.id, 1)} aria-label={`Опустить ${task.title}`}>↓</button>
+            <button type="button" className="order-button" disabled={index === 0} onClick={() => actions.moveOneOff(task.id, -1)} aria-label={t('Поднять {title}', { title: task.title })}>↑</button>
+            <button type="button" className="order-button" disabled={index === group.length - 1} onClick={() => actions.moveOneOff(task.id, 1)} aria-label={t('Опустить {title}', { title: task.title })}>↓</button>
           </span>
         )}
-        <button className="delete-btn" type="button" onClick={() => removeTask(task)} aria-label={`Удалить разовую задачу ${task.title}`}>×</button>
+        <button className="delete-btn" type="button" onClick={() => removeTask(task)} aria-label={t('Удалить разовую задачу {title}', { title: task.title })}>×</button>
       </li>
     );
   }
@@ -115,32 +119,32 @@ export function OneOffList() {
   return (
     <div className="one-off-list">
       <form className="add-form" onSubmit={handleSubmit} noValidate>
-        <input type="text" aria-label="Название разовой задачи" placeholder="Например, отправить документы" value={title} onChange={(event) => { setFormError(''); setTitle(event.target.value); }} maxLength={100} required />
-        <div className="one-off-form-options"><label>Срок<input type="date" min={todayKey} aria-label="Срок выполнения" value={deadline} onChange={(event) => { setFormError(''); setDeadline(event.target.value); }} /></label><label>Приоритет<select aria-label="Приоритет задачи" value={priority} onChange={(event) => { setFormError(''); setPriority(event.target.value as OneOffPriority); }}><option value="high">Высокий</option><option value="normal">Обычный</option><option value="low">Низкий</option></select></label></div>
-        <button type="submit" className="button button--red"><span aria-hidden="true">＋</span> Добавить задачу</button>
+        <input type="text" aria-label={t('Название разовой задачи')} placeholder={t('Например, отправить документы')} value={title} onChange={(event) => { setFormError(''); setTitle(event.target.value); }} maxLength={100} required />
+        <div className="one-off-form-options"><label>{t('Срок')}<input type="date" min={todayKey} aria-label={t('Срок выполнения')} value={deadline} onChange={(event) => { setFormError(''); setDeadline(event.target.value); }} /></label><label>{t('Приоритет')}<select aria-label={t('Приоритет задачи')} value={priority} onChange={(event) => { setFormError(''); setPriority(event.target.value as OneOffPriority); }}><option value="high">{t('Высокий')}</option><option value="normal">{t('Обычный')}</option><option value="low">{t('Низкий')}</option></select></label></div>
+        <button type="submit" className="button button--red"><span aria-hidden="true">＋</span> {t('Добавить задачу')}</button>
         {formError && <p className="backup-message" role="alert">{formError}</p>}
       </form>
 
       <div className="one-off-toolbar">
-        <div className="filter-pills" role="group" aria-label="Фильтр задач">
+        <div className="filter-pills" role="group" aria-label={t('Фильтр задач')}>
           {([['all', 'Все'], ['overdue', 'Просроченные'], ['high', 'Высокий приоритет']] as const).map(([value, label]) => (
-            <button key={value} type="button" className={filter === value ? 'is-selected' : ''} onClick={() => setFilter(value)} aria-pressed={filter === value}>{label}</button>
+            <button key={value} type="button" className={filter === value ? 'is-selected' : ''} onClick={() => setFilter(value)} aria-pressed={filter === value}>{t(label)}</button>
           ))}
         </div>
-        <div className="filter-pills" role="group" aria-label="Порядок сортировки">
+        <div className="filter-pills" role="group" aria-label={t('Порядок сортировки')}>
           {([['auto', 'По сроку/приоритету'], ['manual', 'Вручную']] as const).map(([value, label]) => (
-            <button key={value} type="button" className={sortMode === value ? 'is-selected' : ''} onClick={() => setSortMode(value)} aria-pressed={sortMode === value}>{label}</button>
+            <button key={value} type="button" className={sortMode === value ? 'is-selected' : ''} onClick={() => setSortMode(value)} aria-pressed={sortMode === value}>{t(label)}</button>
           ))}
         </div>
       </div>
 
       <section className="one-off-group" aria-labelledby="active-oneoff-title">
-        <h2 id="active-oneoff-title">В работе <span>{activeTasks.length}</span></h2>
-        {activeTasks.length ? <ul>{activeTasks.map((task, index) => renderTask(task, index, activeTasks))}</ul> : <p className="one-off-empty">Здесь пусто. Добавь дело и закрой его.</p>}
+        <h2 id="active-oneoff-title">{t('В работе')} <span>{activeTasks.length}</span></h2>
+        {activeTasks.length ? <ul>{activeTasks.map((task, index) => renderTask(task, index, activeTasks))}</ul> : <p className="one-off-empty">{t('Здесь пусто. Добавь дело и закрой его.')}</p>}
       </section>
       <section className="one-off-group one-off-archive" aria-labelledby="done-oneoff-title">
-        <h2 id="done-oneoff-title">Архив выполненного <span>{completedTasks.length}</span></h2>
-        {completedTasks.length ? <ul>{completedTasks.map((task) => renderTask(task, 0, completedTasks))}</ul> : <p className="one-off-empty">Завершённые дела останутся здесь зачёркнутыми.</p>}
+        <h2 id="done-oneoff-title">{t('Архив выполненного')} <span>{completedTasks.length}</span></h2>
+        {completedTasks.length ? <ul>{completedTasks.map((task) => renderTask(task, 0, completedTasks))}</ul> : <p className="one-off-empty">{t('Завершённые дела останутся здесь зачёркнутыми.')}</p>}
       </section>
     </div>
   );

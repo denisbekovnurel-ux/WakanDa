@@ -5,6 +5,7 @@ import { createStateSnapshot, fetchStateHistory, restoreStateSnapshot } from '..
 import { useFeedback } from './FeedbackContext';
 import type { StatusHistoryItem } from '../types';
 import { errorMessage } from '../utils/errors';
+import { formatDate as formatLocalizedDate, useI18n } from '../i18n';
 
 const REASON_LABELS: Record<string, string> = {
   auto: 'Автоснимок',
@@ -13,28 +14,24 @@ const REASON_LABELS: Record<string, string> = {
   restore: 'Перед откатом',
 };
 
-const dateTimeFormatter = new Intl.DateTimeFormat('ru-RU', {
+const dateTimeOptions: Intl.DateTimeFormatOptions = {
   day: '2-digit',
   month: '2-digit',
   year: 'numeric',
   hour: '2-digit',
   minute: '2-digit',
-});
+};
 
-function formatDate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : dateTimeFormatter.format(date);
-}
-
-function formatSize(bytes: number): string {
+function formatSize(bytes: number, kilobyte: string, byte: string): string {
   if (!Number.isFinite(bytes)) return '';
-  return bytes >= 1024 ? `${Math.round(bytes / 1024)} КБ` : `${bytes} Б`;
+  return bytes >= 1024 ? `${Math.round(bytes / 1024)} ${kilobyte}` : `${bytes} ${byte}`;
 }
 
 export function StateHistory() {
   const { token } = useAuth();
   const { adoptServerState } = useAppStore();
   const { confirm } = useFeedback();
+  const { t } = useI18n();
   const [items, setItems] = useState<StatusHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -103,37 +100,36 @@ export function StateHistory() {
     <div className="state-history">
       <div className="state-history-head">
         <div>
-          <p className="eyebrow">ЗАЩИТА ДАННЫХ</p>
-          <h2>История версий</h2>
+          <p className="eyebrow">{t('ЗАЩИТА ДАННЫХ')}</p>
+          <h2>{t('История версий')}</h2>
           <p className="section-description">
-            Сервер хранит последние 40 версий: автоснимки (раз в 10 минут), а также снимки
-            перед импортом бэкапа и откатом. Любую версию можно вернуть.
+            {t('Сервер хранит последние 40 версий: автоснимки (раз в 10 минут), а также снимки перед импортом бэкапа и откатом. Любую версию можно вернуть.')}
           </p>
         </div>
-        <button className="button button--light" type="button" onClick={makeSnapshot}>Сделать снимок</button>
+        <button className="button button--light" type="button" onClick={makeSnapshot}>{t('Сделать снимок')}</button>
       </div>
 
-      {error && <p className="backup-message" role="alert">{error}</p>}
-      {notice && <p className="backup-message" role="status">{notice}</p>}
+      {error && <p className="backup-message" role="alert">{t(error)}</p>}
+      {notice && <p className="backup-message" role="status">{t(notice)}</p>}
 
-      {loading && <p className="section-description">Загрузка истории…</p>}
+      {loading && <p className="section-description">{t('Загрузка истории…')}</p>}
       {!loading && items.length === 0 && (
-        <p className="section-description">Пока снимков нет — они появятся по мере работы.</p>
+        <p className="section-description">{t('Пока снимков нет — они появятся по мере работы.')}</p>
       )}
 
       {items.length > 0 && (
         <ul className="state-history-list">
           {items.map((item) => (
             <li key={item.id}>
-              <span className="state-history-reason">{REASON_LABELS[item.reason] || 'Снимок'}</span>
-              <span className="state-history-date">{formatDate(item.createdAt)} · {formatSize(item.size)}</span>
+              <span className="state-history-reason">{t(REASON_LABELS[item.reason] || 'Снимок')}</span>
+              <span className="state-history-date">{formatLocalizedDate(item.createdAt, dateTimeOptions)} · {formatSize(item.size, t('КБ'), t('Б'))}</span>
               <button
                 className="button button--light state-history-restore"
                 type="button"
                 disabled={busyId === item.id}
                 onClick={() => restore(item.id)}
               >
-                {busyId === item.id ? 'Восстанавливаем…' : 'Откатить'}
+                {busyId === item.id ? t('Восстанавливаем…') : t('Откатить')}
               </button>
             </li>
           ))}

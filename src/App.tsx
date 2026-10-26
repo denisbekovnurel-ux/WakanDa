@@ -20,6 +20,8 @@ import { sendTestPush } from './api/pushApi';
 import { FeedbackViewport } from './components/Feedback';
 import { useFeedback } from './components/FeedbackContext';
 import { PageFallback } from './components/PageFallback';
+import { LanguageSwitcher } from './components/LanguageSwitcher';
+import { formatDate, useI18n } from './i18n';
 import quotes from './data/quotes.json';
 import { errorMessage } from './utils/errors';
 import './App.css';
@@ -55,7 +57,7 @@ const pages: Record<PageKey, PageMeta> = {
   admin: { label: 'ADMIN 관리자', en: 'ADMIN', ko: '관리자', eyebrow: 'УПРАВЛЕНИЕ ДОСТУПОМ', title: 'Админ-панель', description: 'Одобряй заявки, следи за активностью и управляй доступом пользователей.', image: 'admin-bg.jpg' },
 };
 
-const dateFormatter = new Intl.DateTimeFormat('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
+const dateOptions: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long' };
 
 function isPageKey(value: string): value is PageKey {
   return Object.hasOwn(pages, value);
@@ -66,8 +68,9 @@ function pathForPage(key: PageKey): string {
 }
 
 function AdminOnly({ allowed }: { allowed: boolean }) {
+  const { t } = useI18n();
   if (!allowed) {
-    return <section className="section-card page-section"><p className="section-description">Раздел доступен только администратору.</p></section>;
+    return <section className="section-card page-section"><p className="section-description">{t('Раздел доступен только администратору.')}</p></section>;
   }
   return <AdminPanel />;
 }
@@ -76,13 +79,14 @@ function App() {
   const { state, actions, conflict, resolveConflict } = useAppStore();
   const { user, token, logout } = useAuth();
   const { notify } = useFeedback();
+  const { t, locale } = useI18n();
   const isAdmin = user?.role === 'admin';
   const { oneOffTasks, theme, reminderTime, reminderEnabled } = state;
   const prefersDark = usePrefersDark();
   // «system» — следуем системной теме, иначе берём явный выбор пользователя.
   const effectiveTheme = theme === 'system' ? (prefersDark ? 'dark' : 'light') : theme;
   const nextTheme = theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system';
-  const themeNames = { system: 'как в системе', light: 'светлая', dark: 'тёмная' };
+  const themeNames = { system: t('как в системе'), light: t('светлая'), dark: t('тёмная') };
   const themeIcons = { system: '◐', light: '☼', dark: '☾' };
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
@@ -115,6 +119,22 @@ function App() {
     window.addEventListener('beforeinstallprompt', captureInstallPrompt);
     return () => window.removeEventListener('beforeinstallprompt', captureInstallPrompt);
   }, []);
+
+  // Заголовок и описание вкладки тоже часть интерфейса.
+  useEffect(() => {
+    const title = t('WakanDa — дисциплина и привычки');
+    document.title = title;
+    const values: Array<[string, string]> = [
+      ['meta[name="description"]', t('WakanDa — дисциплина, привычки и разовые задачи в одном месте.')],
+      ['meta[property="og:title"]', title],
+      ['meta[property="og:description"]', t('Привычки и разовые задачи. Каждый день — шаг вперёд.')],
+      ['meta[name="twitter:title"]', title],
+      ['meta[name="twitter:description"]', t('Привычки и разовые задачи. Каждый день — шаг вперёд.')],
+    ];
+    for (const [selector, content] of values) {
+      document.querySelector(selector)?.setAttribute('content', content);
+    }
+  }, [locale, t]);
 
   // При переходе между страницами остаёмся наверху — иначе длинная главная
   // «передаёт» свою прокрутку короткому разделу.
@@ -188,23 +208,24 @@ function App() {
   return (
     <div className={`app-shell ${effectiveTheme === 'light' ? 'theme-light' : ''}`}>
       <header className="topbar">
-        <Link className="brand" to="/" aria-label="WakanDa 와칸다 — на главную"><span className="brand-mark" aria-hidden="true">W</span><span>WakanDa<span className="brand-period">.</span></span><span className="brand-ko">와칸다</span></Link>
-        <nav className="main-nav" aria-label="Основная навигация">
+        <Link className="brand" to="/" aria-label={t('WakanDa 와칸다 — на главную')}><span className="brand-mark" aria-hidden="true">W</span><span>WakanDa<span className="brand-period">.</span></span><span className="brand-ko">와칸다</span></Link>
+        <nav className="main-nav" aria-label={t('Основная навигация')}>
           {(Object.entries(pages) as Array<[PageKey, PageMeta]>).filter(([key]) => key !== 'admin' || isAdmin).map(([key, item]) => <NavLink key={key} to={pathForPage(key)} end={key === 'home'} className={({ isActive }) => (isActive ? 'is-active' : '')}>{item.label}</NavLink>)}
         </nav>
-        {page === 'home' && <span className="pending-reminder" aria-live="polite">{pendingHabits ? `ОСТАЛОСЬ ОТМЕТИТЬ ${pendingHabits}` : 'ВСЁ ОТМЕЧЕНО'}</span>}
+        {page === 'home' && <span className="pending-reminder" aria-live="polite">{pendingHabits ? t('ОСТАЛОСЬ ОТМЕТИТЬ {count}', { count: pendingHabits }) : t('ВСЁ ОТМЕЧЕНО')}</span>}
         <div className="user-menu">
           <span className="user-chip" title={user?.username}>{user?.username}<span className="user-chip-role">{isAdmin ? 'ADMIN' : 'USER'}</span></span>
-          <button className="logout-button" type="button" onClick={() => setShowPasswordDialog(true)} title="Пароль и сессии">Пароль</button>
-          <button className="logout-button" type="button" onClick={logout} title="Выйти из аккаунта">Выйти</button>
+          <button className="logout-button" type="button" onClick={() => setShowPasswordDialog(true)} title={t('Пароль и сессии')}>{t('Пароль')}</button>
+          <button className="logout-button" type="button" onClick={logout} title={t('Выйти из аккаунта')}>{t('Выйти')}</button>
         </div>
-        <button className="theme-toggle" type="button" onClick={() => actions.setTheme(nextTheme)} aria-label={`Тема: ${themeNames[theme]}. Переключить на «${themeNames[nextTheme]}»`} title={`Тема: ${themeNames[theme]}`}>{themeIcons[theme]}</button>
-        <time className="today-date" dateTime={todayKey}>{dateFormatter.format(today)}</time>
+        <LanguageSwitcher />
+        <button className="theme-toggle" type="button" onClick={() => actions.setTheme(nextTheme)} aria-label={t('Тема: {current}. Переключить на «{next}»', { current: themeNames[theme], next: themeNames[nextTheme] })} title={t('Тема: {current}', { current: themeNames[theme] })}>{themeIcons[theme]}</button>
+        <time className="today-date" dateTime={todayKey}>{formatDate(today, dateOptions)}</time>
       </header>
 
       <main className="page-content">
         <section className={`page-hero page-hero--${page ?? 'home'}`} style={{ '--page-photo': `url('/images/${currentPage.image}')` } as CSSProperties} aria-labelledby="page-title">
-          <div className="page-hero-copy"><p className="eyebrow">{currentPage.eyebrow}</p><h1 id="page-title">{currentPage.title}</h1><p className="page-hero-description">{currentPage.description}</p></div>
+          <div className="page-hero-copy"><p className="eyebrow">{t(currentPage.eyebrow)}</p><h1 id="page-title">{t(currentPage.title)}</h1><p className="page-hero-description">{t(currentPage.description)}</p></div>
           <div className="hero-watermark" aria-hidden="true">{currentPage.ko}</div>
         </section>
 
@@ -212,16 +233,16 @@ function App() {
           <Routes>
             <Route path="/" element={(
               <>
-                <section className="stats-grid" aria-label="Сводка">
-                  <article className="stat-card"><span className="stat-icon" aria-hidden="true">✦</span><div><p className="stat-label">Выполнено сегодня</p><p className="stat-value">{completedToday}<span> / {activeTasks.length}</span></p><p className="stat-foot">{pluralize(completedToday, 'привычка выполнена', 'привычки выполнены', 'привычек выполнено')}</p></div></article>
-                  <article className="stat-card stat-card--red"><span className="stat-icon" aria-hidden="true">⚔</span><div><p className="stat-label">Разовые задачи</p><p className="stat-value">{oneOffTasks.filter((task) => !task.done).length}<span> в работе</span></p><p className="stat-foot">{oneOffTasks.filter((task) => task.done).length} закрыто и в архиве</p></div></article>
-                  <article className="stat-card stat-card--gold"><span className="stat-icon" aria-hidden="true">🏅</span><div><p className="stat-label">Награды</p><p className="stat-value">{unlockedCount}<span> / {badges.length}</span></p><p className="stat-foot"><Link className="text-link" to="/stats">смотреть достижения</Link></p></div></article>
+                <section className="stats-grid" aria-label={t('Сводка')}>
+                  <article className="stat-card"><span className="stat-icon" aria-hidden="true">✦</span><div><p className="stat-label">{t('Выполнено сегодня')}</p><p className="stat-value">{completedToday}<span> / {activeTasks.length}</span></p><p className="stat-foot">{pluralize(completedToday, 'привычка выполнена', 'привычки выполнены', 'привычек выполнено')}</p></div></article>
+                  <article className="stat-card stat-card--red"><span className="stat-icon" aria-hidden="true">⚔</span><div><p className="stat-label">{t('Разовые задачи')}</p><p className="stat-value">{oneOffTasks.filter((task) => !task.done).length}<span> {t('в работе')}</span></p><p className="stat-foot">{t('{count} закрыто и в архиве', { count: oneOffTasks.filter((task) => task.done).length })}</p></div></article>
+                  <article className="stat-card stat-card--gold"><span className="stat-icon" aria-hidden="true">🏅</span><div><p className="stat-label">{t('Награды')}</p><p className="stat-value">{unlockedCount}<span> / {badges.length}</span></p><p className="stat-foot"><Link className="text-link" to="/stats">{t('смотреть достижения')}</Link></p></div></article>
                 </section>
                 <div className="home-grid">
-                  <section className="section-card home-preview"><div className="section-heading"><div><p className="eyebrow">ДЕНЬ ЗА ДНЁМ</p><h2>Твои привычки</h2></div><Link className="text-link" to="/daily">Открыть месяц <span aria-hidden="true">↗</span></Link></div><p className="section-description">{activeTasks.length ? `В списке ${activeTasks.length} ${pluralize(activeTasks.length, 'привычка', 'привычки', 'привычек')}. Продолжай держать ритм.` : 'Добавь привычку и начни собирать свою серию.'}</p><ul className="home-habit-list">{activeTasks.slice(0, 4).map((task) => <li key={task.id}><span className={`home-habit-mark ${task.history?.[todayKey] === 'done' ? 'is-done' : ''}`}>{task.history?.[todayKey] === 'done' ? '✓' : '·'}</span><span>{task.title}</span></li>)}</ul>{activeTasks.length > 4 && <Link className="text-link home-more" to="/daily">И ещё {activeTasks.length - 4} привычек</Link>}</section>
-                  <section className="section-card home-focus"><p className="eyebrow">НЕ ЖДИ ИДЕАЛЬНОГО МОМЕНТА</p><h2>Выбери дело.<br /><span>Доведи до конца.</span></h2><p className="section-description">Характер крепнет не от обещаний, а от выполненных решений.</p><Link className="button button--red" to="/oneoff">К списку задач <span aria-hidden="true">→</span></Link></section>
+                  <section className="section-card home-preview"><div className="section-heading"><div><p className="eyebrow">{t('ДЕНЬ ЗА ДНЁМ')}</p><h2>{t('Твои привычки')}</h2></div><Link className="text-link" to="/daily">{t('Открыть месяц')} <span aria-hidden="true">↗</span></Link></div><p className="section-description">{activeTasks.length ? t('В списке {count} {unit}. Продолжай держать ритм.', { count: activeTasks.length, unit: pluralize(activeTasks.length, 'привычка', 'привычки', 'привычек') }) : t('Добавь привычку и начни собирать свою серию.')}</p><ul className="home-habit-list">{activeTasks.slice(0, 4).map((task) => <li key={task.id}><span className={`home-habit-mark ${task.history?.[todayKey] === 'done' ? 'is-done' : ''}`}>{task.history?.[todayKey] === 'done' ? '✓' : '·'}</span><span>{task.title}</span></li>)}</ul>{activeTasks.length > 4 && <Link className="text-link home-more" to="/daily">{t('И ещё {count} привычек', { count: activeTasks.length - 4 })}</Link>}</section>
+                  <section className="section-card home-focus"><p className="eyebrow">{t('НЕ ЖДИ ИДЕАЛЬНОГО МОМЕНТА')}</p><h2>{t('Выбери дело.')}<br /><span>{t('Доведи до конца.')}</span></h2><p className="section-description">{t('Характер крепнет не от обещаний, а от выполненных решений.')}</p><Link className="button button--red" to="/oneoff">{t('К списку задач')} <span aria-hidden="true">→</span></Link></section>
                 </div>
-                <section className="section-card settings-panel"><div><p className="eyebrow">СОХРАНИ СВОЙ ПРОГРЕСС</p><h2>Инструменты и напоминания</h2><p className="section-description">Напоминание приходит в выбранное время. С включёнными push-уведомлениями сервер пришлёт его, даже когда вкладка закрыта (нужно установить приложение и разрешить уведомления).</p></div><div className="reminder-controls"><label>Время напоминания<input type="time" value={reminderTime} onChange={(event) => actions.setReminderTime(event.target.value)} /></label><button className="button button--red" type="button" onClick={toggleReminders}>{reminderEnabled ? 'Отключить напоминания' : 'Включить напоминание'}</button>{reminderEnabled && <button className="button button--light" type="button" onClick={sendTestNotification}>Проверить уведомление</button>}</div><BackupControls />{installPrompt && <button className="button button--light install-button" type="button" onClick={installApp}>Установить WakanDa</button>}<StateHistory /></section>
+                <section className="section-card settings-panel"><div><p className="eyebrow">{t('СОХРАНИ СВОЙ ПРОГРЕСС')}</p><h2>{t('Инструменты и напоминания')}</h2><p className="section-description">{t('Напоминание приходит в выбранное время. С включёнными push-уведомлениями сервер пришлёт его, даже когда вкладка закрыта (нужно установить приложение и разрешить уведомления).')}</p></div><div className="reminder-controls"><label>{t('Время напоминания')}<input type="time" value={reminderTime} onChange={(event) => actions.setReminderTime(event.target.value)} /></label><button className="button button--red" type="button" onClick={toggleReminders}>{reminderEnabled ? t('Отключить напоминания') : t('Включить напоминание')}</button>{reminderEnabled && <button className="button button--light" type="button" onClick={sendTestNotification}>{t('Проверить уведомление')}</button>}</div><BackupControls />{installPrompt && <button className="button button--light install-button" type="button" onClick={installApp}>{t('Установить WakanDa')}</button>}<StateHistory /></section>
               </>
             )} />
             <Route path="/daily" element={<DailyPage />} />
@@ -232,8 +253,8 @@ function App() {
           </Routes>
         </Suspense>
 
-        <aside key={quoteIndex} className="quote-card" aria-label="Мотивационная цитата"><span className="quote-mark" aria-hidden="true">“</span><p>{quotes[quoteIndex].text}</p><span className="quote-caption">ДИСЦИПЛИНА · {String(quoteIndex + 1).padStart(2, '0')} / {quotes.length}</span></aside>
-        <footer className="site-footer"><span>Выдержка создаёт результат.</span><span>WAKANDA 와칸다 <span aria-hidden="true">✳</span></span></footer>
+        <aside key={quoteIndex} className="quote-card" aria-label={t('Мотивационная цитата')}><span className="quote-mark" aria-hidden="true">“</span><p>{t(quotes[quoteIndex].text)}</p><span className="quote-caption">{t('ДИСЦИПЛИНА')} · {String(quoteIndex + 1).padStart(2, '0')} / {quotes.length}</span></aside>
+        <footer className="site-footer"><span>{t('Выдержка создаёт результат.')}</span><span>WAKANDA 와칸다 <span aria-hidden="true">✳</span></span></footer>
       </main>
       {conflict && <SyncConflictDialog conflict={conflict} onChoose={resolveConflict} />}
       {showPasswordDialog && <PasswordChangeDialog onClose={() => setShowPasswordDialog(false)} />}

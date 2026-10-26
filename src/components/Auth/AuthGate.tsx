@@ -4,10 +4,12 @@ import App from '../../App';
 import { AuthScreen } from './AuthScreen';
 import { PendingScreen } from './PendingScreen';
 import { AuthBrand } from './Brand';
+import { LanguageSwitcher } from '../LanguageSwitcher';
 
 function SplashScreen() {
   return (
     <div className="auth-shell">
+      <LanguageSwitcher className="lang-switch--auth" />
       <div className="auth-card auth-card--splash">
         <AuthBrand />
         <div className="pending-pulse" aria-hidden="true">

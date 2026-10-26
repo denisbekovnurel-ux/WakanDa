@@ -13,20 +13,22 @@ import { TIMINGS } from '../../config/timings';
 import { adminPasswordSchema, firstError } from '../../validation/schemas';
 import type { AdminStats, User, UserStatus } from '../../types';
 import { errorMessage } from '../../utils/errors';
+import { formatDate, useI18n } from '../../i18n';
 
 const STATUS_LABELS: Record<UserStatus, string> = { pending: 'Ожидает', approved: 'Одобрен', blocked: 'Заблокирован' };
-const dateTimeFormatter = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const dateTimeOptions: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' };
 
 type AdminAction = 'delete' | 'kick' | AdminUserAction;
 
-function formatDate(value?: string | null): string {
+function formatAdminDate(value?: string | null): string {
   if (!value) return '—';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : dateTimeFormatter.format(date);
+  return Number.isNaN(date.getTime()) ? '—' : formatDate(date, dateTimeOptions);
 }
 
 export function AdminPanel() {
   const { token, user: me } = useAuth();
+  const { t } = useI18n();
   const { confirm, prompt, notify } = useFeedback();
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<AdminStats | null>(null);
@@ -67,9 +69,9 @@ export function AdminPanel() {
       if (action === 'delete') {
         const target = users.find((entry) => entry.id === id);
         const confirmed = await confirm({
-          title: 'Удалить пользователя?',
-          message: `«${target?.username ?? ''}» и все его данные будут удалены безвозвратно.`,
-          confirmText: 'Удалить',
+          title: t('Удалить пользователя?'),
+          message: t('«{username}» и все его данные будут удалены безвозвратно.', { username: target?.username ?? '' }),
+          confirmText: t('Удалить'),
           tone: 'danger',
         });
         if (!confirmed) return;
@@ -93,13 +95,13 @@ export function AdminPanel() {
   async function resetPassword(id: string) {
     const target = users.find((entry) => entry.id === id);
     const password = await prompt({
-      title: 'Новый пароль',
-      message: `Для «${target?.username ?? ''}». Все сессии пользователя будут разорваны.`,
-      inputLabel: 'Новый пароль (от 6 символов)',
+      title: t('Новый пароль'),
+      message: t('Для «{username}». Все сессии пользователя будут разорваны.', { username: target?.username ?? '' }),
+      inputLabel: t('Новый пароль (от 6 символов)'),
       inputType: 'password',
       autoComplete: 'new-password',
       minLength: 6,
-      confirmText: 'Сбросить пароль',
+      confirmText: t('Сбросить пароль'),
     });
     if (password == null) return;
     const parsed = adminPasswordSchema.safeParse(password);
@@ -123,54 +125,54 @@ export function AdminPanel() {
     <section className="section-card page-section admin-page">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">УПРАВЛЕНИЕ ДОСТУПОМ</p>
-          <h2>Админ-панель</h2>
+          <p className="eyebrow">{t('УПРАВЛЕНИЕ ДОСТУПОМ')}</p>
+          <h2>{t('Админ-панель')}</h2>
         </div>
-        <span className="section-count">{users.length} всего</span>
+        <span className="section-count">{t('{count} всего', { count: users.length })}</span>
       </div>
       <p className="section-description">
-        Одобряйте заявки, кикайте или блокируйте пользователей. Список обновляется автоматически.
+        {t('Одобряйте заявки, кикайте или блокируйте пользователей. Список обновляется автоматически.')}
       </p>
 
       <div className="admin-stats">
         <article className="admin-stat admin-stat--online">
           <span className="admin-stat-value">{stats?.online ?? '—'}</span>
-          <span className="admin-stat-label">Сейчас в сети</span>
+          <span className="admin-stat-label">{t('Сейчас в сети')}</span>
         </article>
         <article className="admin-stat">
           <span className="admin-stat-value">{stats?.approved ?? '—'}</span>
-          <span className="admin-stat-label">С доступом</span>
+          <span className="admin-stat-label">{t('С доступом')}</span>
         </article>
         <article className="admin-stat admin-stat--pending">
           <span className="admin-stat-value">{stats?.pending ?? '—'}</span>
-          <span className="admin-stat-label">Ожидают</span>
+          <span className="admin-stat-label">{t('Ожидают')}</span>
         </article>
         <article className="admin-stat">
           <span className="admin-stat-value">{stats?.blocked ?? '—'}</span>
-          <span className="admin-stat-label">Заблокированы</span>
+          <span className="admin-stat-label">{t('Заблокированы')}</span>
         </article>
       </div>
 
-      {error && <p className="admin-message admin-message--error" role="alert">{error}</p>}
-      {notice && <p className="admin-message" role="status">{notice}</p>}
+      {error && <p className="admin-message admin-message--error" role="alert">{t(error)}</p>}
+      {notice && <p className="admin-message" role="status">{t(notice)}</p>}
 
       <div className="admin-table-wrap">
         <table className="admin-table">
           <thead>
             <tr>
-              <th>Пользователь</th>
-              <th>Статус</th>
-              <th>Онлайн</th>
-              <th>Создан</th>
-              <th aria-label="Действия" />
+              <th>{t('Пользователь')}</th>
+              <th>{t('Статус')}</th>
+              <th>{t('Онлайн')}</th>
+              <th>{t('Создан')}</th>
+              <th aria-label={t('Действия')} />
             </tr>
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={5} className="admin-empty">Загрузка…</td></tr>
+              <tr><td colSpan={5} className="admin-empty">{t('Загрузка…')}</td></tr>
             )}
             {!loading && users.length === 0 && (
-              <tr><td colSpan={5} className="admin-empty">Пока нет зарегистрированных пользователей.</td></tr>
+              <tr><td colSpan={5} className="admin-empty">{t('Пока нет зарегистрированных пользователей.')}</td></tr>
             )}
             {users.map((entry) => {
               const isSelf = entry.id === me?.id;
@@ -180,15 +182,15 @@ export function AdminPanel() {
                   <td>
                     <span className="admin-username">{entry.username}</span>
                     {isAdmin && <span className="admin-role-tag">ADMIN</span>}
-                    {isSelf && <span className="admin-role-tag admin-role-tag--me">ВЫ</span>}
+                    {isSelf && <span className="admin-role-tag admin-role-tag--me">{t('ВЫ')}</span>}
                   </td>
                   <td>
-                    <span className={`admin-status admin-status--${entry.status}`}>{STATUS_LABELS[entry.status] ?? entry.status}</span>
+                    <span className={`admin-status admin-status--${entry.status}`}>{t(STATUS_LABELS[entry.status] ?? entry.status)}</span>
                   </td>
                   <td>
-                    {entry.online ? <span className="admin-online is-on">● в сети</span> : <span className="admin-online">—</span>}
+                    {entry.online ? <span className="admin-online is-on">● {t('в сети')}</span> : <span className="admin-online">—</span>}
                   </td>
-                  <td className="admin-date">{formatDate(entry.createdAt)}</td>
+                  <td className="admin-date">{formatAdminDate(entry.createdAt)}</td>
                   <td>
                     <div className="admin-actions">
                       {isAdmin ? (
@@ -196,23 +198,23 @@ export function AdminPanel() {
                       ) : (
                         <>
                           {entry.status === 'pending' && (
-                            <button type="button" className="button button--red admin-btn" disabled={busyId === entry.id} onClick={() => act(entry.id, 'approve')}>Одобрить</button>
+                            <button type="button" className="button button--red admin-btn" disabled={busyId === entry.id} onClick={() => act(entry.id, 'approve')}>{t('Одобрить')}</button>
                           )}
                           {entry.status === 'approved' && (
-                            <button type="button" className="button button--light admin-btn" disabled={busyId === entry.id} onClick={() => act(entry.id, 'kick')} title="Разорвать активные сессии">Кикнуть</button>
+                            <button type="button" className="button button--light admin-btn" disabled={busyId === entry.id} onClick={() => act(entry.id, 'kick')} title={t('Разорвать активные сессии')}>{t('Кикнуть')}</button>
                           )}
                           {entry.status === 'blocked' ? (
-                            <button type="button" className="button button--light admin-btn" disabled={busyId === entry.id} onClick={() => act(entry.id, 'unblock')}>Разблокировать</button>
+                            <button type="button" className="button button--light admin-btn" disabled={busyId === entry.id} onClick={() => act(entry.id, 'unblock')}>{t('Разблокировать')}</button>
                           ) : (
                             entry.status === 'approved' && (
-                              <button type="button" className="button button--light admin-btn" disabled={busyId === entry.id} onClick={() => act(entry.id, 'block')}>Заблокировать</button>
+                              <button type="button" className="button button--light admin-btn" disabled={busyId === entry.id} onClick={() => act(entry.id, 'block')}>{t('Заблокировать')}</button>
                             )
                           )}
                           {entry.status === 'pending' && (
-                            <button type="button" className="button button--light admin-btn" disabled={busyId === entry.id} onClick={() => act(entry.id, 'block')}>Отклонить</button>
+                            <button type="button" className="button button--light admin-btn" disabled={busyId === entry.id} onClick={() => act(entry.id, 'block')}>{t('Отклонить')}</button>
                           )}
-                          <button type="button" className="button button--light admin-btn" disabled={busyId === entry.id} onClick={() => resetPassword(entry.id)} title="Задать пользователю новый пароль">Сбросить пароль</button>
-                          <button type="button" className="text-button admin-delete" disabled={busyId === entry.id} onClick={() => act(entry.id, 'delete')}>Удалить</button>
+                          <button type="button" className="button button--light admin-btn" disabled={busyId === entry.id} onClick={() => resetPassword(entry.id)} title={t('Задать пользователю новый пароль')}>{t('Сбросить пароль')}</button>
+                          <button type="button" className="text-button admin-delete" disabled={busyId === entry.id} onClick={() => act(entry.id, 'delete')}>{t('Удалить')}</button>
                         </>
                       )}
                     </div>
@@ -226,22 +228,19 @@ export function AdminPanel() {
 
       <div className="admin-security">
         <div>
-          <p className="eyebrow">БЕЗОПАСНОСТЬ</p>
-          <h3>Один постоянный администратор</h3>
+          <p className="eyebrow">{t('БЕЗОПАСНОСТЬ')}</p>
+          <h3>{t('Один постоянный администратор')}</h3>
           <p className="section-description">
-            Аккаунт администратора единственный и неизменный: его нельзя удалить, заблокировать
-            или создать второго. Логин зафиксирован, а пароль, который вы сменили сами,
-            сервер не сбрасывает. Если задан <code>WAKANDA_ADMIN_PASS</code>, он применяется
-            при каждом запуске.
+            {t('Аккаунт администратора единственный и неизменный: его нельзя удалить, заблокировать или создать второго. Логин зафиксирован, а пароль, который вы сменили сами, сервер не сбрасывает.')}{' '}
+            {t('Если задан')} <code>WAKANDA_ADMIN_PASS</code>{t(', он применяется при каждом запуске.')}
           </p>
         </div>
         <div className="admin-note-card">
           <p className="admin-note-line">
-            Логин администратора: <strong>{users.find((entry) => entry.role === 'admin')?.username ?? '—'}</strong>
+            {t('Логин администратора:')} <strong>{users.find((entry) => entry.role === 'admin')?.username ?? '—'}</strong>
           </p>
           <p className="admin-note-line admin-note-line--muted">
-            Пароль — в файле <code>server/data/admin-credentials.txt</code> на сервере.
-            Чтобы сменить его осознанно, задай <code>WAKANDA_ADMIN_PASS</code> в <code>server/.env</code> и перезапусти сервер.
+            {t('Пароль — в файле')} <code>server/data/admin-credentials.txt</code> {t('на сервере. Чтобы сменить его осознанно, задай')} <code>WAKANDA_ADMIN_PASS</code> {t('в')} <code>server/.env</code> {t('и перезапусти сервер.')}
           </p>
         </div>
       </div>

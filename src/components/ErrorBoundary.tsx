@@ -1,5 +1,6 @@
 import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
+import { translate } from '../i18n';
 import { reportClientError } from '../utils/reportClientError';
 
 interface ErrorBoundaryProps {
@@ -49,16 +50,15 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
     return (
       <div className="fatal-error" role="alert">
-        <p className="eyebrow">ЧТО-ТО ПОШЛО НЕ ТАК</p>
-        <h1>Приложение не смогло отрисоваться</h1>
+        <p className="eyebrow">{translate('ЧТО-ТО ПОШЛО НЕ ТАК')}</p>
+        <h1>{translate('Приложение не смогло отрисоваться')}</h1>
         <p className="section-description">
-          Данные не потеряны: они остаются в браузере и на сервере. Перезагрузи страницу
-          или вернись на главную.
+          {translate('Данные не потеряны: они остаются в браузере и на сервере. Перезагрузи страницу или вернись на главную.')}
         </p>
         <div className="fatal-error-actions">
-          <button className="button button--red" type="button" onClick={this.handleReload}>Перезагрузить</button>
-          <button className="button button--light" type="button" onClick={this.handleRetry}>Попробовать снова</button>
-          <a className="button button--light" href="/">На главную</a>
+          <button className="button button--red" type="button" onClick={this.handleReload}>{translate('Перезагрузить')}</button>
+          <button className="button button--light" type="button" onClick={this.handleRetry}>{translate('Попробовать снова')}</button>
+          <a className="button button--light" href="/">{translate('На главную')}</a>
         </div>
         <pre className="fatal-error-details">{String(this.state.error?.message || this.state.error)}</pre>
       </div>

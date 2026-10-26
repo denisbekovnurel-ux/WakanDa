@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { pluralize } from '../utils/pluralize';
 import type { AppState, ConflictChoice, SyncConflict } from '../types';
 import { errorMessage } from '../utils/errors';
+import { useI18n } from '../i18n';
 
 function summarize(state: AppState): string[] {
   return [
@@ -21,19 +22,21 @@ interface VersionCardProps {
 }
 
 function VersionCard({ title, hint, items, action, busy, onChoose }: VersionCardProps) {
+  const { t } = useI18n();
   return (
     <article className="sync-version">
-      <h3>{title}</h3>
-      <p className="sync-version-hint">{hint}</p>
+      <h3>{t(title)}</h3>
+      <p className="sync-version-hint">{t(hint)}</p>
       <ul className="sync-version-list">
         {items.map((item) => <li key={item}>{item}</li>)}
       </ul>
-      <button className="button button--red" type="button" disabled={busy} onClick={onChoose}>{action}</button>
+      <button className="button button--red" type="button" disabled={busy} onClick={onChoose}>{t(action)}</button>
     </article>
   );
 }
 
 export function SyncConflictDialog({ conflict, onChoose }: { conflict: SyncConflict; onChoose: (choice: ConflictChoice) => Promise<void> }) {
+  const { t } = useI18n();
   const [busy, setBusy] = useState<ConflictChoice | null>(null);
   const [error, setError] = useState('');
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -59,14 +62,12 @@ export function SyncConflictDialog({ conflict, onChoose }: { conflict: SyncConfl
   return (
     <div className="sync-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="sync-dialog-title">
       <div className="sync-dialog" ref={dialogRef} tabIndex={-1} style={{ outline: 'none' }}>
-        <p className="eyebrow">КОНФЛИКТ СИНХРОНИЗАЦИИ</p>
-        <h2 id="sync-dialog-title">Есть две версии данных</h2>
+        <p className="eyebrow">{t('КОНФЛИКТ СИНХРОНИЗАЦИИ')}</p>
+        <h2 id="sync-dialog-title">{t('Есть две версии данных')}</h2>
         <p className="section-description">
-          Ты менял данные без подключения к серверу, и с тех пор на сервере тоже появились изменения.
-          Выбери, какую версию оставить. Неиспользованная версия пропадёт, поэтому при сомнениях
-          сначала скачай резервную копию.
+          {t('Ты менял данные без подключения к серверу, и с тех пор на сервере тоже появились изменения. Выбери, какую версию оставить. Неиспользованная версия пропадёт, поэтому при сомнениях сначала скачай резервную копию.')}
         </p>
-        {error && <p className="backup-message" role="alert">{error}</p>}
+        {error && <p className="backup-message" role="alert">{t(error)}</p>}
         <div className="sync-versions">
           <VersionCard
             title="Мои изменения"

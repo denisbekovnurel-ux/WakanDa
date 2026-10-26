@@ -4,12 +4,15 @@ import { useAuth } from '../../auth/AuthContext';
 import { firstError, loginSchema, registrationSchema } from '../../validation/schemas';
 import { AuthBrand } from './Brand';
 import { errorMessage } from '../../utils/errors';
+import { LanguageSwitcher } from '../LanguageSwitcher';
+import { useI18n } from '../../i18n';
 
 type AuthMode = 'login' | 'register';
 type AuthField = 'username' | 'password' | 'confirm';
 
 export function AuthScreen() {
   const { login, register } = useAuth();
+  const { t } = useI18n();
   const [mode, setMode] = useState<AuthMode>('login');
   const [form, setForm] = useState({ username: '', password: '', confirm: '' });
   const [error, setError] = useState('');
@@ -47,11 +50,12 @@ export function AuthScreen() {
 
   return (
     <div className="auth-shell">
+      <LanguageSwitcher className="lang-switch--auth" />
       <div className="auth-card">
         <AuthBrand />
-        <p className="auth-tagline">Дисциплина и привычки. Доступ по одобрению.</p>
+        <p className="auth-tagline">{t('Дисциплина и привычки. Доступ по одобрению.')}</p>
 
-        <div className="auth-tabs" role="tablist" aria-label="Вход или регистрация">
+        <div className="auth-tabs" role="tablist" aria-label={t('Вход или регистрация')}>
           <button
             type="button"
             role="tab"
@@ -59,7 +63,7 @@ export function AuthScreen() {
             className={mode === 'login' ? 'is-active' : ''}
             onClick={() => switchMode('login')}
           >
-            Вход
+            {t('Вход')}
           </button>
           <button
             type="button"
@@ -68,25 +72,25 @@ export function AuthScreen() {
             className={mode === 'register' ? 'is-active' : ''}
             onClick={() => switchMode('register')}
           >
-            Регистрация
+            {t('Регистрация')}
           </button>
         </div>
 
         <form className="auth-form" onSubmit={submit}>
           <label>
-            <span>Логин</span>
+            <span>{t('Логин')}</span>
             <input
               type="text"
               value={form.username}
               onChange={(event) => update('username', event.target.value)}
               autoComplete="username"
-              placeholder="Ваш логин"
+              placeholder={t('Ваш логин')}
               maxLength={24}
               autoFocus
             />
           </label>
           <label>
-            <span>Пароль</span>
+            <span>{t('Пароль')}</span>
             <input
               type="password"
               value={form.password}
@@ -98,7 +102,7 @@ export function AuthScreen() {
           </label>
           {mode === 'register' && (
             <label>
-              <span>Повтор пароля</span>
+              <span>{t('Повтор пароля')}</span>
               <input
                 type="password"
                 value={form.confirm}
@@ -113,14 +117,14 @@ export function AuthScreen() {
           {error && <p className="auth-error" role="alert">{error}</p>}
 
           <button className="button button--red auth-submit" type="submit" disabled={busy}>
-            {busy ? 'Подождите…' : mode === 'login' ? 'Войти' : 'Создать аккаунт'}
+            {busy ? t('Подождите…') : mode === 'login' ? t('Войти') : t('Создать аккаунт')}
           </button>
         </form>
 
         <p className="auth-note">
           {mode === 'register'
-            ? 'После регистрации доступ открывает администратор. До этого вы увидите страницу ожидания.'
-            : 'Нет аккаунта? Выберите «Регистрация».'}
+            ? t('После регистрации доступ открывает администратор. До этого вы увидите страницу ожидания.')
+            : t('Нет аккаунта? Выберите «Регистрация».')}
         </p>
       </div>
       <p className="auth-footer">WAKANDA 와칸다 <span aria-hidden="true">✳</span></p>

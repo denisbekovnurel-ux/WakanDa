@@ -46,7 +46,7 @@ describe('OneOffList', () => {
     expect(screen.getByRole('heading', { name: /Архив выполненного/ }).textContent).toContain('1');
     expect(screen.getByText('Отправить документы')).toBeTruthy();
     expect(screen.getByText('Оплатить счёт')).toBeTruthy();
-    expect(screen.getByText('ПРОСРОЧЕНО · 2026-10-20')).toBeTruthy();
+    expect(screen.getByText(/ПРОСРОЧЕНО ·/).getAttribute('dateTime')).toBe('2026-10-20');
   });
 
   it('не добавляет задачу с пустым названием и объясняет почему', () => {

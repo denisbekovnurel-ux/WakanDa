@@ -7,6 +7,7 @@ import { assertValidBackupData, normalizeState } from '../utils/schema';
 import { useFeedback } from './FeedbackContext';
 import type { SyncStatus } from '../types';
 import { errorMessage } from '../utils/errors';
+import { useI18n } from '../i18n';
 
 const STATUS_TEXT: Record<SyncStatus, string> = {
   connecting: 'Подключаемся к серверу…',
@@ -19,6 +20,7 @@ export function BackupControls() {
   const { state, actions, syncStatus } = useAppStore();
   const { token } = useAuth();
   const { confirm } = useFeedback();
+  const { t } = useI18n();
   const [message, setMessage] = useState('');
 
   function buildBackup() {
@@ -75,11 +77,11 @@ export function BackupControls() {
   return (
     <div className="backup-controls">
       <p className={`backup-warning ${syncStatus === 'saved' || syncStatus === 'saving' ? 'backup-warning--ok' : ''}`} role="status">
-        {STATUS_TEXT[syncStatus]}
+        {t(STATUS_TEXT[syncStatus])}
       </p>
-      <button className="button button--light" type="button" onClick={handleExport}>Скачать копию</button>
-      <label className="button button--light backup-import">Восстановить из файла<input type="file" accept="application/json,.json" onChange={handleImport} /></label>
-      {message && <p className="backup-message" role="status">{message}</p>}
+      <button className="button button--light" type="button" onClick={handleExport}>{t('Скачать копию')}</button>
+      <label className="button button--light backup-import">{t('Восстановить из файла')}<input type="file" accept="application/json,.json" onChange={handleImport} /></label>
+      {message && <p className="backup-message" role="status">{t(message)}</p>}
     </div>
   );
 }

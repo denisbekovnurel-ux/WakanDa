@@ -1,10 +1,12 @@
 import { useAppStore } from '../../store/AppStore';
 import { toDateKey } from '../../utils/calc';
+import { formatDate, useI18n } from '../../i18n';
 
-const dateFormatter = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', weekday: 'short' });
+const noteDateOptions: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', weekday: 'short' };
 
 export function NotesPanel() {
   const { state, actions } = useAppStore();
+  const { t } = useI18n();
   const todayKey = toDateKey(new Date());
   // Значение всегда берём напрямую из стора — так заметка не «потеряется»,
   // когда серверная версия приходит позже (новая вкладка/устройство, конфликт).
@@ -16,14 +18,14 @@ export function NotesPanel() {
     .slice(0, 5);
 
   return (
-    <section className="section-card notes-panel" aria-label="Ежедневные заметки">
-      <div className="section-heading"><div><p className="eyebrow">ДНЕВНИК</p><h2>Заметка дня</h2></div></div>
+    <section className="section-card notes-panel" aria-label={t('Ежедневные заметки')}>
+      <div className="section-heading"><div><p className="eyebrow">{t('ДНЕВНИК')}</p><h2>{t('Заметка дня')}</h2></div></div>
       <textarea
         className="notes-input"
         rows={3}
         maxLength={2000}
-        placeholder="Что получилось сегодня? Что не вышло и почему?"
-        aria-label={`Заметка за ${todayKey}`}
+        placeholder={t('Что получилось сегодня? Что не вышло и почему?')}
+        aria-label={t('Заметка за {date}', { date: todayKey })}
         value={draft}
         onChange={(event) => actions.setNote(todayKey, event.target.value)}
       />
@@ -31,7 +33,7 @@ export function NotesPanel() {
         <ul className="notes-list">
           {recent.map(([dateKey, text]) => (
             <li key={dateKey}>
-              <time dateTime={dateKey}>{dateFormatter.format(new Date(`${dateKey}T00:00:00`))}</time>
+              <time dateTime={dateKey}>{formatDate(new Date(`${dateKey}T00:00:00`), noteDateOptions)}</time>
               <p>{text}</p>
             </li>
           ))}

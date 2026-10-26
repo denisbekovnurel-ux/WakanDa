@@ -15,12 +15,13 @@ import { useAppStore } from '../../store/AppStore';
 import { ProgressRing } from '../ProgressRing/ProgressRing';
 import { createProgressCard, shareOrDownload } from '../../utils/shareCard';
 import { useFeedback } from '../FeedbackContext';
+import { formatDate, translate, useI18n } from '../../i18n';
 
 const FULL_SCHEDULE = [0, 1, 2, 3, 4, 5, 6];
 const WEEKDAY_SHORT = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 const HEATMAP_WEEKDAYS = ['', 'Пн', '', 'Ср', '', 'Пт', ''];
-const monthLong = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' });
-const monthShort = new Intl.DateTimeFormat('ru-RU', { month: 'short' });
+const monthOptions: Intl.DateTimeFormatOptions = { month: 'long', year: 'numeric' };
+const shortMonthOptions: Intl.DateTimeFormatOptions = { month: 'short' };
 
 interface HeatmapDay {
   date: Date;
@@ -37,15 +38,18 @@ function heatCellClass(percent: number | null): string {
 }
 
 function heatCellTitle(day: HeatmapDay): string {
-  return `${day.key} (${WEEKDAY_SHORT[day.date.getDay()]}): ${day.percent === null ? 'без привычек' : `${Math.round(day.percent * 100)}%`}`;
+  const weekday = translate(WEEKDAY_SHORT[day.date.getDay()]);
+  const value = day.percent === null ? translate('без привычек') : `${Math.round(day.percent * 100)}%`;
+  return `${day.key} (${weekday}): ${value}`;
 }
 
 export function StatsPage() {
   const { state } = useAppStore();
   const { notify } = useFeedback();
+  const { t, locale } = useI18n();
   const { today } = useToday();
   const tasks = useMemo(() => state.tasks.filter((task) => !task.archived), [state.tasks]);
-  const badges = useMemo(() => getBadges(state), [state]);
+  const badges = getBadges(state);
   const [monthCursor, setMonthCursor] = useState(() => {
     const current = new Date();
     return new Date(current.getFullYear(), current.getMonth(), 1);
@@ -55,7 +59,7 @@ export function StatsPage() {
   const year = monthCursor.getFullYear();
   const monthIndex = monthCursor.getMonth();
   const isCurrentMonth = year === today.getFullYear() && monthIndex === today.getMonth();
-  const monthLabel = monthLong.format(monthCursor);
+  const monthLabel = formatDate(monthCursor, monthOptions);
   // Для текущего месяца статистику считаем по сегодня, для прошедших — по всему месяцу.
   const referenceDate = useMemo(
     () => (isCurrentMonth ? today : new Date(year, monthIndex + 1, 0, 12)),
@@ -116,11 +120,11 @@ export function StatsPage() {
       const firstDay = week.find((day): day is HeatmapDay => day !== null);
       if (!firstDay) return '';
       const previous = weeks[index - 1]?.find((day): day is HeatmapDay => day !== null);
-      if (!previous || previous.date.getMonth() !== firstDay.date.getMonth()) return monthShort.format(firstDay.date);
+      if (!previous || previous.date.getMonth() !== firstDay.date.getMonth()) return formatDate(firstDay.date, shortMonthOptions, locale);
       return '';
     });
     return { weeks, monthLabels };
-  }, [tasks, today]);
+  }, [tasks, today, locale]);
 
   const records = useMemo(() => state.tasks.map((task) => ({
     id: task.id,
@@ -153,10 +157,10 @@ export function StatsPage() {
         days: monthDays,
         streakHabit: streakLeader?.current > 0 ? streakLeader : null,
       });
-      await shareOrDownload(blob, `wakanda-${year}-${String(monthIndex + 1).padStart(2, '0')}.png`, `Мой прогресс за ${monthLabel}: ${summary.percent}%`);
+      await shareOrDownload(blob, `wakanda-${year}-${String(monthIndex + 1).padStart(2, '0')}.png`, t('Мой прогресс за {month}: {percent}%', { month: monthLabel, percent: summary.percent }));
     } catch (error) {
       console.error('Не удалось собрать карточку прогресса:', error);
-      notify('Не удалось собрать картинку. Попробуйте ещё раз.', { tone: 'error' });
+      notify(t('Не удалось собрать картинку. Попробуйте ещё раз.'), { tone: 'error' });
     } finally {
       setShareBusy(false);
     }
@@ -165,58 +169,58 @@ export function StatsPage() {
   return (
     <section className="section-card page-section stats-page">
       <div className="section-heading">
-        <div><p className="eyebrow">ДИСЦИПЛИНА В ЦИФРАХ</p><h2>Твоя статистика</h2></div>
+        <div><p className="eyebrow">{t('ДИСЦИПЛИНА В ЦИФРАХ')}</p><h2>{t('Твоя статистика')}</h2></div>
         <div className="month-controls">
-          <button type="button" className="month-arrow" onClick={() => setMonthCursor((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))} aria-label="Предыдущий месяц">‹</button>
+          <button type="button" className="month-arrow" onClick={() => setMonthCursor((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))} aria-label={t('Предыдущий месяц')}>‹</button>
           <time className="month-name" dateTime={`${year}-${String(monthIndex + 1).padStart(2, '0')}`}>{monthLabel}</time>
-          <button type="button" className="month-arrow" onClick={() => setMonthCursor((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))} aria-label="Следующий месяц" disabled={isCurrentMonth}>›</button>
+          <button type="button" className="month-arrow" onClick={() => setMonthCursor((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))} aria-label={t('Следующий месяц')} disabled={isCurrentMonth}>›</button>
         </div>
       </div>
 
       <div className="stats-summary">
-        <ProgressRing percent={summary.percent} size={112} ariaLabel={`Выполнено за ${monthLabel}`} />
+        <ProgressRing percent={summary.percent} size={112} ariaLabel={t('Выполнено за {month}', { month: monthLabel })} />
         <div className="stats-summary-main">
-          <p className="stats-summary-label">Выполнено за {monthLabel}</p>
+          <p className="stats-summary-label">{t('Выполнено за {month}', { month: monthLabel })}</p>
           <p className="stats-summary-value">{summary.done}<span> / {summary.expected}</span></p>
           <p className={`stats-delta ${delta > 0 ? 'is-up' : delta < 0 ? 'is-down' : ''}`}>
-            {delta > 0 ? '▲' : delta < 0 ? '▼' : '＝'} {Math.abs(delta)}% к прошлому месяцу
+            {delta > 0 ? '▲' : delta < 0 ? '▼' : '＝'} {t('{percent}% к прошлому месяцу', { percent: Math.abs(delta) })}
           </p>
         </div>
         <div className="stats-summary-side">
-          <p><span>Лучший день недели</span><b>{productiveDay === null ? '—' : WEEKDAY_SHORT[productiveDay]}</b></p>
-          <p><span>Лучшая привычка</span><b>{topHabits[0] ? `${topHabits[0].title} · ${topHabits[0].stats.monthPercent}%` : '—'}</b></p>
+          <p><span>{t('Лучший день недели')}</span><b>{productiveDay === null ? '—' : t(WEEKDAY_SHORT[productiveDay])}</b></p>
+          <p><span>{t('Лучшая привычка')}</span><b>{topHabits[0] ? `${topHabits[0].title} · ${topHabits[0].stats.monthPercent}%` : '—'}</b></p>
         </div>
       </div>
 
       <div className="stats-toolbar">
-        <h3 className="stats-subtitle">Ритм месяца</h3>
-        <button type="button" className="button button--light share-button" onClick={handleShare} disabled={shareBusy}>{shareBusy ? 'Собираем…' : 'Поделиться карточкой'}</button>
+        <h3 className="stats-subtitle">{t('Ритм месяца')}</h3>
+        <button type="button" className="button button--light share-button" onClick={handleShare} disabled={shareBusy}>{shareBusy ? t('Собираем…') : t('Поделиться карточкой')}</button>
       </div>
-      <div className="stats-month-chart" role="img" aria-label={`Доля выполненных привычек по дням: ${monthLabel}`}>
+      <div className="stats-month-chart" role="img" aria-label={t('Доля выполненных привычек по дням: {month}', { month: monthLabel })}>
         {monthDays.map((day) => (
-          <div className="stats-month-col" key={day.key} title={`${day.key}: ${day.percent === null ? 'без привычек' : `${Math.round(day.percent * 100)}%`}`}>
+          <div className="stats-month-col" key={day.key} title={`${day.key}: ${day.percent === null ? t('без привычек') : `${Math.round(day.percent * 100)}%`}`}>
             <span className="stats-month-bar" style={{ height: day.percent === null ? '4px' : `${Math.max(6, day.percent * 100)}%` }} data-empty={day.percent === null} />
             <small>{day.date.getDate()}</small>
           </div>
         ))}
       </div>
 
-      <svg className="stats-trend" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`Динамика выполнения за ${monthLabel}`}>
+      <svg className="stats-trend" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={t('Динамика выполнения за {month}', { month: monthLabel })}>
         {trend.area && <polygon className="stats-trend-area" points={trend.area} />}
         {trend.line && <polyline className="stats-trend-line" points={trend.line} vectorEffect="non-scaling-stroke" />}
       </svg>
       <p className="stats-trend-caption" style={{ display: 'none' }} />
 
-      <h3 className="stats-subtitle">Карта года</h3>
+      <h3 className="stats-subtitle">{t('Карта года')}</h3>
       <div className="heatmap-block">
         <div className="heatmap-months" aria-hidden="true">
           {heatmap.monthLabels.map((label, index) => <span key={index}>{label}</span>)}
         </div>
         <div className="heatmap-body">
           <div className="heatmap-weekdays" aria-hidden="true">
-            {HEATMAP_WEEKDAYS.map((label, index) => <span key={index}>{label}</span>)}
+            {HEATMAP_WEEKDAYS.map((label, index) => <span key={index}>{t(label)}</span>)}
           </div>
-          <div className="stats-heatmap" role="img" aria-label="Тепловая карта выполнений за последний год">
+          <div className="stats-heatmap" role="img" aria-label={t('Тепловая карта выполнений за последний год')}>
             {heatmap.weeks.flatMap((week, weekIndex) => week.map((day, dayIndex) => (
               day
                 ? <span key={`${weekIndex}-${dayIndex}`} className={`heat-cell ${heatCellClass(day.percent)}`} title={heatCellTitle(day)} />
@@ -225,11 +229,11 @@ export function StatsPage() {
           </div>
         </div>
       </div>
-      <div className="heatmap-legend"><span>меньше</span><i className="heat-cell heat-cell--zero" /><i className="heat-cell heat-cell--low" /><i className="heat-cell heat-cell--high" /><i className="heat-cell heat-cell--full" /><span>больше</span></div>
+      <div className="heatmap-legend"><span>{t('меньше')}</span><i className="heat-cell heat-cell--zero" /><i className="heat-cell heat-cell--low" /><i className="heat-cell heat-cell--high" /><i className="heat-cell heat-cell--full" /><span>{t('больше')}</span></div>
 
-      <h3 className="stats-subtitle">Топ привычек</h3>
+      <h3 className="stats-subtitle">{t('Топ привычек')}</h3>
       {topHabits.length === 0 ? (
-        <p className="one-off-empty">Пока нет данных за этот месяц.</p>
+        <p className="one-off-empty">{t('Пока нет данных за этот месяц.')}</p>
       ) : (
         <ol className="top-habits">
           {topHabits.map((habit, index) => (
@@ -243,31 +247,31 @@ export function StatsPage() {
         </ol>
       )}
 
-      <h3 className="stats-subtitle">Рекорды серий</h3>
+      <h3 className="stats-subtitle">{t('Рекорды серий')}</h3>
       {records.length === 0 ? (
-        <p className="one-off-empty">Добавь привычки — здесь появятся рекорды.</p>
+        <p className="one-off-empty">{t('Добавь привычки — здесь появятся рекорды.')}</p>
       ) : (
         <ul className="records-list">
           {records.map((record) => (
             <li key={record.id}>
-              <span className="records-title">{record.title}{record.archived && <small className="records-archived"> архив</small>}</span>
-              <span>сейчас <b>{record.current}</b> дн.</span>
-              <span>рекорд <b>{record.best}</b> дн.</span>
-              <span>месяц <b>{record.stats.monthPercent}%</b> ({record.stats.monthDone}/{record.stats.monthExpected})</span>
-              <span>лучший день <b>{record.stats.mostProductiveDay === null ? '—' : WEEKDAY_SHORT[record.stats.mostProductiveDay]}</b></span>
+              <span className="records-title">{record.title}{record.archived && <small className="records-archived"> {t('архив')}</small>}</span>
+              <span>{t('сейчас')} <b>{record.current}</b> {t('дн.')}</span>
+              <span>{t('рекорд')} <b>{record.best}</b> {t('дн.')}</span>
+              <span>{t('месяц')} <b>{record.stats.monthPercent}%</b> ({record.stats.monthDone}/{record.stats.monthExpected})</span>
+              <span>{t('лучший день')} <b>{record.stats.mostProductiveDay === null ? '—' : t(WEEKDAY_SHORT[record.stats.mostProductiveDay])}</b></span>
             </li>
           ))}
         </ul>
       )}
 
-      <h3 className="stats-subtitle">Награды</h3>
+      <h3 className="stats-subtitle">{t('Награды')}</h3>
       <ul className="badges-grid">
         {badges.map((badge) => (
           <li key={badge.id} className={`badge ${badge.unlocked ? 'badge--unlocked' : ''}`}>
             <span className="badge-icon" aria-hidden="true">{badge.icon}</span>
-            <b>{badge.title}</b>
-            <p>{badge.description}</p>
-            <small>{badge.unlocked ? 'получено' : badge.progress}</small>
+            <b>{t(badge.title)}</b>
+            <p>{t(badge.description)}</p>
+            <small>{badge.unlocked ? t('получено') : t(badge.progress)}</small>
           </li>
         ))}
       </ul>

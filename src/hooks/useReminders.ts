@@ -2,6 +2,7 @@ import { useCallback, useEffect } from 'react';
 import { pluralize } from '../utils/pluralize';
 import { useFeedback } from '../components/FeedbackContext';
 import { useAuth } from '../auth/AuthContext';
+import { translate } from '../i18n';
 
 const PERIODIC_SYNC_TAG = 'wakanda-daily-reminder';
 
@@ -29,17 +30,18 @@ async function getActiveServiceWorker(): Promise<ServiceWorkerRegistration | nul
 }
 
 async function showLocalReminder(message: string): Promise<boolean> {
+  const title = translate('WakanDa — время свериться');
   try {
     const registration = await getActiveServiceWorker();
     if (registration) {
-      await registration.showNotification('WakanDa — время свериться', { body: message, icon: '/icons/icon.svg' });
+      await registration.showNotification(title, { body: message, icon: '/icons/icon.svg' });
     } else {
-      new Notification('WakanDa — время свериться', { body: message });
+      new Notification(title, { body: message });
     }
     return true;
   } catch {
     try {
-      new Notification('WakanDa — время свериться', { body: message });
+      new Notification(title, { body: message });
       return true;
     } catch {
       // уведомление не показали — фиксируем успех только после реальной отправки
@@ -102,7 +104,10 @@ export function useReminders({ enabled, reminderTime, pendingHabits, todayKey }:
         // не смогли проверить — показываем локальное уведомление
       }
 
-      const message = `Осталось отметить ${pendingHabits} ${pluralize(pendingHabits, 'привычку', 'привычки', 'привычек')}.`;
+      const message = translate('Осталось отметить {count} {unit}.', {
+        count: pendingHabits,
+        unit: pluralize(pendingHabits, 'привычку', 'привычки', 'привычек'),
+      });
       if (await showLocalReminder(message)) {
         try {
           localStorage.setItem(lastReminderKey, todayKey);

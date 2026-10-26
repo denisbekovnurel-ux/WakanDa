@@ -6,15 +6,17 @@ import { useAppStore } from '../store/AppStore';
 import { selectActiveHabits } from '../store/selectors';
 import { useFeedback } from './FeedbackContext';
 import { TIMINGS } from '../config/timings';
+import { formatDate, useI18n } from '../i18n';
 import type { Habit, HabitStatus } from '../types';
 
-const weekdayFormatter = new Intl.DateTimeFormat('ru-RU', { weekday: 'short' });
-const monthFormatter = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' });
+const weekdayOptions: Intl.DateTimeFormatOptions = { weekday: 'short' };
+const monthOptions: Intl.DateTimeFormatOptions = { month: 'long', year: 'numeric' };
 
 export function MonthGrid() {
   const { state, actions } = useAppStore();
   const tasks = selectActiveHabits(state);
   const { confirm, notify } = useFeedback();
+  const { t } = useI18n();
   const { today, todayKey } = useToday();
   const [month, setMonth] = useState(() => {
     const current = new Date();
@@ -73,35 +75,35 @@ export function MonthGrid() {
 
   async function archiveHabit(task: Habit) {
     const confirmed = await confirm({
-      title: 'Переместить в архив?',
-      message: `«${task.title}» исчезнет из активных привычек, но история сохранится. Привычку можно вернуть из архива.`,
-      confirmText: 'В архив',
+      title: t('Переместить в архив?'),
+      message: t('«{title}» исчезнет из активных привычек, но история сохранится. Привычку можно вернуть из архива.', { title: task.title }),
+      confirmText: t('В архив'),
     });
     if (!confirmed) return;
     actions.archiveHabit(task.id);
-    notify(`«${task.title}» перемещена в архив.`, { tone: 'success' });
+    notify(t('«{title}» перемещена в архив.', { title: task.title }), { tone: 'success' });
   }
 
   return (
-    <section className="month-panel" aria-label="Календарь привычек за месяц">
+    <section className="month-panel" aria-label={t('Календарь привычек за месяц')}>
       <div className="month-toolbar">
-        <div><p className="eyebrow">НЕПРЕРЫВНЫЙ ПУТЬ</p><h2>Ритм месяца</h2></div>
+        <div><p className="eyebrow">{t('НЕПРЕРЫВНЫЙ ПУТЬ')}</p><h2>{t('Ритм месяца')}</h2></div>
         <div className="month-controls">
-          <button type="button" className="month-arrow" onClick={() => changeMonth(-1)} aria-label="Предыдущий месяц">‹</button>
-          <time className="month-name" dateTime={`${year}-${String(monthIndex + 1).padStart(2, '0')}`}>{monthFormatter.format(month)}</time>
-          <button type="button" className="month-arrow" onClick={() => changeMonth(1)} aria-label="Следующий месяц" disabled={currentOrFutureMonth}>›</button>
+          <button type="button" className="month-arrow" onClick={() => changeMonth(-1)} aria-label={t('Предыдущий месяц')}>‹</button>
+          <time className="month-name" dateTime={`${year}-${String(monthIndex + 1).padStart(2, '0')}`}>{formatDate(month, monthOptions)}</time>
+          <button type="button" className="month-arrow" onClick={() => changeMonth(1)} aria-label={t('Следующий месяц')} disabled={currentOrFutureMonth}>›</button>
         </div>
       </div>
 
       {tasks.length === 0 ? (
-        <p className="week-grid-empty">Сначала добавь привычку — здесь появится календарь на весь месяц.</p>
+        <p className="week-grid-empty">{t('Сначала добавь привычку — здесь появится календарь на весь месяц.')}</p>
       ) : (
-        <div className="month-table-scroll" role="region" aria-label="Отметки по привычкам за месяц. На узком экране прокручивай календарь по горизонтали." tabIndex={0}>
+        <div className="month-table-scroll" role="region" aria-label={t('Отметки по привычкам за месяц. На узком экране прокручивай календарь по горизонтали.')} tabIndex={0}>
           <div className="month-table" style={{ '--day-count': dayCount } as CSSProperties}>
-            <div className="month-row month-row--head"><span className="month-habit-label">Привычка</span>{days.map((day) => {
+            <div className="month-row month-row--head"><span className="month-habit-label">{t('Привычка')}</span>{days.map((day) => {
               const dateKey = toDateKey(day);
-              return <span key={dateKey} className={`month-day-heading ${dateKey === todayKey ? 'is-today' : ''}`} title={`${weekdayFormatter.format(day)}, ${dateKey}`}><small>{weekdayFormatter.format(day)}</small>{day.getDate()}</span>;
-            })}<span className="month-streak-label">СЕРИЯ</span><span aria-hidden="true" /></div>
+              return <span key={dateKey} className={`month-day-heading ${dateKey === todayKey ? 'is-today' : ''}`} title={`${formatDate(day, weekdayOptions)}, ${dateKey}`}><small>{formatDate(day, weekdayOptions)}</small>{day.getDate()}</span>;
+            })}<span className="month-streak-label">{t('СЕРИЯ')}</span><span aria-hidden="true" /></div>
             {tasks.map((task) => (
               <div className="month-row" key={task.id}>
                 <span className="month-habit-label" title={task.title}>{task.title}</span>
@@ -114,18 +116,22 @@ export function MonthGrid() {
                   const paused = !scheduled ? false : isPaused(task, dateKey);
                   const interactive = scheduled && !paused && !future && !beforeCreation;
                   const statusLabel = !scheduled
-                    ? 'выходной по расписанию'
+                    ? t('выходной по расписанию')
                     : future
-                      ? 'будущее — отметка недоступна'
+                      ? t('будущее — отметка недоступна')
                       : beforeCreation
-                        ? 'привычки ещё не было'
+                        ? t('привычки ещё не было')
                         : paused
-                          ? 'пауза'
+                          ? t('пауза')
                           : status === STATUS.DONE
-                            ? 'выполнено'
+                            ? t('выполнено')
                             : status === STATUS.FAILED
-                              ? 'пропуск'
-                              : 'не отмечено';
+                              ? t('пропуск')
+                              : t('не отмечено');
+                  const actionHint = interactive
+                    ? t('Клик — выполнено/снять, Delete — пропуск, удержание или правый клик — пропуск')
+                    : '';
+                  const readableDate = formatDate(day, { day: 'numeric', month: 'long' });
                   return <button type="button" key={dateKey} disabled={!interactive}
                     className={`month-day-cell month-day-cell--${paused ? 'paused' : status} ${dateKey === todayKey ? 'is-today' : ''} ${!scheduled ? 'is-rest' : ''} ${future ? 'is-future' : ''} ${beforeCreation ? 'is-before-creation' : ''} ${interactive && status === STATUS.EMPTY ? 'is-empty' : ''}`}
                     onClick={() => handleCellClick(task, dateKey, status)}
@@ -141,18 +147,18 @@ export function MonthGrid() {
                     onPointerUp={endPress}
                     onPointerLeave={endPress}
                     onPointerCancel={endPress}
-                    aria-label={`${task.title}, ${dateKey}: ${statusLabel}${interactive ? '. Клик — выполнено/снять, Delete — пропуск, удержание или правый клик — пропуск' : ''}`}
-                    title={`${dateKey} — ${statusLabel}`}><span>{!scheduled ? '—' : paused ? '‖' : status === STATUS.DONE ? '✓' : status === STATUS.FAILED ? '×' : ''}</span></button>;
+                    aria-label={`${task.title}, ${dateKey}: ${statusLabel}${actionHint ? `. ${actionHint}` : ''}`}
+                    title={`${readableDate} — ${statusLabel}`}><span>{!scheduled ? '—' : paused ? '‖' : status === STATUS.DONE ? '✓' : status === STATUS.FAILED ? '×' : ''}</span></button>;
                 })}
-                <span className="month-streak-label month-streak-value">{getStreak(task.history || {}, task.schedule || [0, 1, 2, 3, 4, 5, 6], today, task.pauseRanges || [])}<small>дн.</small></span>
-                <button className="delete-btn month-delete" type="button" onClick={() => archiveHabit(task)} aria-label={`Переместить привычку ${task.title} в архив`} title="В архив">↧</button>
+                <span className="month-streak-label month-streak-value">{getStreak(task.history || {}, task.schedule || [0, 1, 2, 3, 4, 5, 6], today, task.pauseRanges || [])}<small>{t('дн.')}</small></span>
+                <button className="delete-btn month-delete" type="button" onClick={() => archiveHabit(task)} aria-label={t('Переместить привычку {title} в архив', { title: task.title })} title={t('В архив')}>↧</button>
               </div>
             ))}
           </div>
         </div>
       )}
-      <div className="month-legend" aria-label="Условные обозначения"><span><i className="legend-dot legend-dot--done" /> выполнено</span><span><i className="legend-dot legend-dot--failed" /> пропуск</span><span><i className="legend-dot legend-dot--paused" /> пауза</span><span><i className="legend-dot" /> не отмечено</span></div>
-      <p className="month-fail-hint"><b>Как отметить пропуск:</b> наведи на пустую ячейку — появится «×», затем удерживай её полсекунды, кликни правой кнопкой или нажми Delete.</p>
+      <div className="month-legend" aria-label={t('Условные обозначения')}><span><i className="legend-dot legend-dot--done" /> {t('выполнено')}</span><span><i className="legend-dot legend-dot--failed" /> {t('пропуск')}</span><span><i className="legend-dot legend-dot--paused" /> {t('пауза')}</span><span><i className="legend-dot" /> {t('не отмечено')}</span></div>
+      <p className="month-fail-hint"><b>{t('Как отметить пропуск:')}</b> {t('наведи на пустую ячейку — появится «×», затем удерживай её полсекунды, кликни правой кнопкой или нажми Delete.')}</p>
     </section>
   );
 }

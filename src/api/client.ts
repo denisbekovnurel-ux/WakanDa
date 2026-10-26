@@ -1,4 +1,5 @@
 import type { ApiError } from '../types';
+import { translate } from '../i18n';
 
 const API = '/api';
 
@@ -35,7 +36,7 @@ async function readBody(response: Response): Promise<unknown> {
 export async function parseResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
   const data = await readBody(response);
   if (!response.ok) {
-    const error = new Error(errorMessage(data, `${fallbackMessage} (${response.status})`)) as ApiError;
+    const error = new Error(errorMessage(data, `${translate(fallbackMessage)} (${response.status})`)) as ApiError;
     error.status = response.status;
     error.data = data;
     throw error;
