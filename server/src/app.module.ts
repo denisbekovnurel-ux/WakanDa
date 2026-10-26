@@ -5,6 +5,7 @@ import { StateModule } from './state/state.module';
 import { AuthModule } from './auth/auth.module';
 import { PushModule } from './push/push.module';
 import { HealthController } from './health.controller';
+import { ClientErrorsController } from './observability/client-errors.controller';
 
 @Module({
   imports: [
@@ -16,6 +17,6 @@ import { HealthController } from './health.controller';
     AuthModule,
     PushModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, ClientErrorsController],
 })
 export class AppModule {}

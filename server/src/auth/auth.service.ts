@@ -5,6 +5,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseService } from '../database/database.service';
 import { FIXED_ADMIN_USERNAME } from './admin.config';
+import { logger } from '../observability/logger';
 
 const PASSWORD_ROTATED_SETTING = 'admin_password_rotated';
 
@@ -138,6 +139,9 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         }
         passwordRotated = true;
       } else if (!passwordRotated) {
+        if (isProduction) {
+          throw new Error('В production задайте WAKANDA_ADMIN_PASS — устаревший пароль администратора нельзя заменять случайным.');
+        }
         generatedPassword = this.generateAdminPassword();
         this.db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(this.hashPassword(generatedPassword), target.id);
         repaired.push('устаревший пароль заменён случайным');
@@ -159,7 +163,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
 
     target = this.db.prepare('SELECT * FROM users WHERE id = ?').get(target.id) as UserRow;
     if (repaired.length) {
-      console.log(`WakanDa: аккаунт администратора приведён в порядок (${repaired.join(', ')})`);
+      logger.info({ repaired }, 'admin account repaired');
     }
 
     // Никаких вторых администраторов.
@@ -167,11 +171,11 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       if (admin.id === target.id) continue;
       this.db.prepare("UPDATE users SET role = 'user', status = 'approved' WHERE id = ?").run(admin.id);
       this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(admin.id);
-      console.log(`WakanDa: у аккаунта «${admin.username}» сняты права администратора`);
+      logger.warn({ username: admin.username }, 'extra admin demoted');
     }
 
     const credentialsFile = join(this.dataDir, 'admin-credentials.txt');
-    const passwordLine = generatedPassword
+    const passwordLine = generatedPassword && !isProduction
       ? `Пароль: ${generatedPassword}\n        Сохраните его и смените через раздел «Пароль».\n`
       : usingEnvPassword
         ? 'Пароль: задан переменной WAKANDA_ADMIN_PASS (в файл не записывается).\n'
@@ -189,29 +193,23 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     try {
       writeFileSync(credentialsFile, content, { mode: 0o600 });
     } catch (error) {
-      console.error('Не удалось сохранить файл с данными администратора:', error);
-      if (generatedPassword) {
-        console.error(`WakanDa: сохраните сгенерированный пароль администратора вручную: ${generatedPassword}`);
-      }
+      logger.error(
+        { err: error, credentialsFile },
+        'failed to write admin credentials file; set WAKANDA_ADMIN_PASS and restart',
+      );
     }
 
     if (process.platform === 'win32') {
-      console.warn('WakanDa: на Windows права файла admin-credentials.txt (0600) не действуют — считайте файл обычным секретом.');
+      logger.warn('admin-credentials.txt mode 0600 is not enforced on Windows');
     }
-    console.log('\n============================================');
-    console.log('  WakanDa: аккаунт администратора (единственный)');
-    console.log(`  Логин:  ${username}`);
-    if (generatedPassword) {
-      console.log(isProduction
-        ? `  Пароль: сгенерирован и записан в ${credentialsFile}`
-        : `  Пароль: ${generatedPassword}`);
-    } else if (usingEnvPassword) {
-      console.log('  Пароль: задан переменной WAKANDA_ADMIN_PASS (в лог не выводится)');
-    } else {
-      console.log('  Пароль: не изменялся; в открытом виде не хранится');
-    }
-    console.log(`  Файл:   ${credentialsFile}`);
-    console.log('============================================\n');
+    logger.info(
+      {
+        username,
+        credentialsFile,
+        passwordSource: generatedPassword ? 'generated_file' : usingEnvPassword ? 'env' : 'unchanged',
+      },
+      'admin account ready',
+    );
   }
 
   private generateAdminPassword(): string {

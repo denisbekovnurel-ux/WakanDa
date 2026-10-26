@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import './env';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,10 +8,10 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { buildHelmetOptions, parseCorsOrigins, parseTrustProxy } from './security/security.config';
-
-// Подхватываем server/.env, если он есть (логин/пароль администратора, порт).
-const envFile = join(dirname(fileURLToPath(import.meta.url)), '../.env');
-if (existsSync(envFile)) process.loadEnvFile(envFile);
+import { logger } from './observability/logger';
+import { NestPinoLogger } from './observability/nest-logger';
+import { requestLogger } from './observability/http-logger';
+import { AllExceptionsFilter } from './observability/exception.filter';
 
 // Состояние пользователя — один JSON на всю историю, поэтому стандартных 100 КБ
 // из express недостаточно: автосохранение тихо падало бы с 413. Лимит настраиваемый.
@@ -36,13 +37,23 @@ function serveFrontend(app: NestExpressApplication) {
   // SPA-фолбэк: всё, что не /api, отдаёт index.html (но сначала сервер отдаёт
   // реальные ассеты из dist через useStaticAssets).
   express.get(/^(?!\/api\/?).*/, (_request, response) => response.sendFile(indexFile));
-  console.log(`WakanDa: раздаём собранный фронтенд из ${DIST_DIR}`);
+  logger.info({ distDir: DIST_DIR }, 'serving built frontend');
 }
 
 async function bootstrap() {
   const isProduction = process.env.NODE_ENV === 'production';
   // Отключаем встроенный парсер, чтобы задать свой лимит, а не 100 КБ по умолчанию.
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+    // Стартовые сообщения Nest буферизуем и отдаём в pino после useLogger,
+    // чтобы весь stdout был одним JSON-потоком без ANSI-вставок.
+    bufferLogs: true,
+  });
+  app.useLogger(new NestPinoLogger());
+  // Request id + лог завершения запроса. Ставим до парсеров и guard'ов, чтобы
+  // ошибки на любом этапе уже имели X-Request-Id.
+  app.use('/api', requestLogger);
+  app.useGlobalFilters(new AllExceptionsFilter());
   // Security-заголовки ставим первыми — до раздачи статики и API.
   app.use(helmet(buildHelmetOptions(isProduction)));
   app.useBodyParser('json', { limit: BODY_LIMIT });
@@ -58,16 +69,22 @@ async function bootstrap() {
   const trustProxy = parseTrustProxy(process.env.WAKANDA_TRUST_PROXY);
   const expressInstance = app.getHttpAdapter().getInstance() as { set?: (key: string, value: unknown) => void };
   if (trustProxy !== false) expressInstance?.set?.('trust proxy', trustProxy);
-  console.log(
-    `WakanDa: CORS ${corsOrigins ? corsOrigins.join(', ') : 'только same-origin'}; `
-      + `trust proxy ${trustProxy === false ? 'выключен' : trustProxy}`,
+  logger.info(
+    {
+      cors: corsOrigins ?? 'same-origin',
+      trustProxy: trustProxy === false ? 'disabled' : trustProxy,
+    },
+    'http security configured',
   );
   app.setGlobalPrefix('api');
   app.enableShutdownHooks();
   serveFrontend(app);
   const port = Number(process.env.PORT) || 3001;
   await app.listen(port);
-  console.log(`WakanDa API: http://localhost:${port}/api`);
+  logger.info({ port, url: `http://localhost:${port}/api` }, 'api listening');
 }
 
-bootstrap();
+bootstrap().catch((error: unknown) => {
+  logger.fatal({ err: error }, 'server failed to start');
+  process.exitCode = 1;
+});

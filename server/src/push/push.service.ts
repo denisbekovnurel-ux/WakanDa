@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3';
 import webpush from 'web-push';
 import { DatabaseService } from '../database/database.service';
 import { dueReminderDateKey, normalizeTimezoneOffset, ReminderSettings } from './push.util';
+import { logger } from '../observability/logger';
 
 // Раз в минуту проверяем, у кого наступило время напоминания.
 const CHECK_INTERVAL_MS = 60_000;
@@ -56,13 +57,13 @@ export class PushService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     this.timer = setInterval(() => {
-      this.runReminders().catch((error) => console.error('Push: напоминания не отработали:', error));
+      this.runReminders().catch((error) => logger.error({ err: error }, 'push reminders failed'));
     }, CHECK_INTERVAL_MS);
     this.pruneTimer = setInterval(() => {
       try {
         this.prunePushLog();
       } catch (error) {
-        console.error('Push: не удалось почистить журнал отправок:', error);
+        logger.error({ err: error }, 'failed to prune push log');
       }
     }, PRUNE_INTERVAL_MS);
     // Не держим процесс живым только из-за таймеров напоминаний.
@@ -115,7 +116,7 @@ export class PushService implements OnModuleInit, OnModuleDestroy {
       // Один ключ без второго — почти наверняка ошибка конфигурации. Не
       // подменяем половину пары сгенерированным ключом: старые подписки молча
       // перестанут работать, а причина будет неочевидной.
-      console.error('Push: WAKANDA_VAPID_PUBLIC и WAKANDA_VAPID_PRIVATE нужно задавать вместе. Уведомления отключены.');
+      logger.error('WAKANDA_VAPID_PUBLIC and WAKANDA_VAPID_PRIVATE must be set together; push disabled');
       this.ready = false;
       return;
     }
@@ -135,7 +136,7 @@ export class PushService implements OnModuleInit, OnModuleDestroy {
       webpush.setVapidDetails(subject, publicKey, privateKey);
       this.ready = true;
     } catch (error) {
-      console.error('Push: некорректные VAPID-ключи, уведомления отключены:', error);
+      logger.error({ err: error }, 'invalid VAPID keys; push disabled');
       this.ready = false;
     }
   }

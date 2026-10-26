@@ -4,6 +4,7 @@ import { chmodSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runMigrations } from './migrations';
+import { logger } from '../observability/logger';
 
 /**
  * Единственное подключение к SQLite для всего приложения.
@@ -29,7 +30,7 @@ export class DatabaseService implements OnModuleDestroy {
     this.db.pragma('foreign_keys = ON');
     const applied = runMigrations(this.db);
     if (applied.length) {
-      console.log(`WakanDa: применены миграции базы (${applied.join(', ')})`);
+      logger.info({ migrations: applied }, 'database migrations applied');
     }
     // На POSIX база — это личные данные пользователей. На Windows chmod
     // фактически не меняет ACL, но и не мешает запуску.

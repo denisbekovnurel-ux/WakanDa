@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Inject, Injectable, NotFoundExc
 import Database from 'better-sqlite3';
 import { DatabaseService } from '../database/database.service';
 import { AppState, DEFAULT_STATE, HabitStatus, StateValidationError, sanitizeAppState } from './state.schema';
+import { logger } from '../observability/logger';
 
 export type { AppState } from './state.schema';
 
@@ -47,7 +48,7 @@ export class StateService {
         try {
           return this.saveForUser(userId, legacy);
         } catch (error) {
-          console.error('Не удалось перенести старые данные в аккаунт администратора:', error);
+          logger.error({ err: error, userId }, 'failed to migrate legacy state to admin account');
         }
       }
     }

@@ -1,5 +1,6 @@
 import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
+import { reportClientError } from '../utils/reportClientError';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -32,6 +33,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Ошибка интерфейса:', error, info?.componentStack);
+    reportClientError(error, { componentStack: info?.componentStack ?? undefined, source: 'react' });
   }
 
   handleReload() {

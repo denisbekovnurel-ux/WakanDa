@@ -97,6 +97,25 @@ async function main() {
   check('security headers: referrer policy', security.headers.get('referrer-policy') === 'strict-origin-when-cross-origin');
   check('security headers: x-powered-by hidden', !security.headers.get('x-powered-by'));
 
+  const generatedRequestId = security.headers.get('x-request-id') ?? '';
+  check('request id generated', /^[0-9a-f-]{36}$/.test(generatedRequestId), generatedRequestId);
+  const echoed = await fetch(`${API}/health`, { headers: { 'X-Request-Id': 'e2e-request-1234' } });
+  check('request id echoed', echoed.headers.get('x-request-id') === 'e2e-request-1234');
+
+  const clientError = await req('/client-errors', {
+    method: 'POST',
+    body: {
+      message: 'E2E client failure',
+      stack: 'Error: E2E\n    at test',
+      source: 'react',
+      url: '/daily?token=hidden#section',
+      token: 'must-not-be-stored',
+    },
+  });
+  check('client error report accepted', clientError.status === 201 && clientError.data?.ok === true, JSON.stringify(clientError.data));
+  const badClientError = await req('/client-errors', { method: 'POST', body: { stack: 'no message' } });
+  check('client error report validates payload', badClientError.status === 400);
+
   const corsProbe = await req('/health', { origin: 'https://evil.example' });
   check('CORS closed by default (no reflected origin)', !corsProbe.headers.get('access-control-allow-origin'));
 
