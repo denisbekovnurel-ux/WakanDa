@@ -1,10 +1,17 @@
 import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
 import "./index.css";
 import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 import { AuthProvider } from "./auth/AuthContext.jsx";
 import { AuthGate } from "./components/Auth/AuthGate.jsx";
 import { FeedbackProvider } from "./components/Feedback.jsx";
 import { TodayProvider } from "./hooks/TodayProvider.jsx";
+import { migrateLegacyHash } from "./router/legacyHash";
+
+// Старые ссылки вида `/#daily` до старта роутера переводим в `/daily`,
+// чтобы закладки и уведомления, отправленные до перехода, не открывали главную.
+const legacyTarget = migrateLegacyHash(window.location);
+if (legacyTarget) window.history.replaceState(null, "", legacyTarget);
 
 createRoot(document.getElementById("root")).render(
   // ErrorBoundary — снаружи всех провайдеров: падение любого из них должно
@@ -12,9 +19,11 @@ createRoot(document.getElementById("root")).render(
   <ErrorBoundary>
     <FeedbackProvider>
       <TodayProvider>
-        <AuthProvider>
-          <AuthGate />
-        </AuthProvider>
+        <BrowserRouter>
+          <AuthProvider>
+            <AuthGate />
+          </AuthProvider>
+        </BrowserRouter>
       </TodayProvider>
     </FeedbackProvider>
   </ErrorBoundary>

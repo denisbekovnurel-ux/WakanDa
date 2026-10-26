@@ -47,7 +47,7 @@ export class ErrorBoundary extends Component {
         <div className="fatal-error-actions">
           <button className="button button--red" type="button" onClick={this.handleReload}>Перезагрузить</button>
           <button className="button button--light" type="button" onClick={this.handleRetry}>Попробовать снова</button>
-          <a className="button button--light" href="#home">На главную</a>
+          <a className="button button--light" href="/">На главную</a>
         </div>
         <pre className="fatal-error-details">{String(this.state.error?.message || this.state.error)}</pre>
       </div>

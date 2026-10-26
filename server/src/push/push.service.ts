@@ -281,7 +281,7 @@ export class PushService implements OnModuleInit, OnModuleDestroy {
   }
 
   sendTest(userId: string) {
-    return this.sendToUser(userId, { title: 'WakanDa', body: 'Тестовое уведомление — push настроен.', url: '/#home' });
+    return this.sendToUser(userId, { title: 'WakanDa', body: 'Тестовое уведомление — push настроен.', url: '/' });
   }
 
   // ─── Планировщик напоминаний ───
@@ -318,7 +318,7 @@ export class PushService implements OnModuleInit, OnModuleDestroy {
         const result = await this.sendToUser(row.user_id, {
           title: 'WakanDa — время свериться',
           body: 'Пора отметить привычки за сегодня и закрыть день.',
-          url: '/#daily',
+          url: '/daily',
         });
         // Если не ушло ни одно уведомление (сеть/сервис), не считаем день
         // закрытым: следующий тик попробует снова в пределах grace-окна.

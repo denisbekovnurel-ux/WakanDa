@@ -52,7 +52,7 @@ self.addEventListener('fetch', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const target = event.notification.data?.url || '/#daily';
+  const target = event.notification.data?.url || '/daily';
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
     const client = clients.find((entry) => 'focus' in entry);
     return client ? client.navigate(target).then(() => client.focus()) : self.clients.openWindow(target);
@@ -62,7 +62,7 @@ self.addEventListener('notificationclick', (event) => {
 // Web Push: уведомление приходит с сервера, даже когда вкладка (и приложение)
 // закрыты. Payload — JSON { title, body, url }.
 self.addEventListener('push', (event) => {
-  let payload = { title: 'WakanDa', body: 'Пора свериться с планом.', url: '/#daily' };
+  let payload = { title: 'WakanDa', body: 'Пора свериться с планом.', url: '/daily' };
   try {
     if (event.data) payload = { ...payload, ...event.data.json() };
   } catch {
@@ -76,7 +76,7 @@ self.addEventListener('push', (event) => {
     body: payload.body || '',
     icon: '/icons/icon-192.png',
     badge: '/icons/icon-192.png',
-    data: { url: payload.url || '/#daily' },
+    data: { url: payload.url || '/daily' },
   }));
 });
 
@@ -88,6 +88,6 @@ self.addEventListener('periodicsync', (event) => {
     body: 'Загляни в приложение и отметь выполненные привычки за сегодня.',
     icon: '/icons/icon-192.png',
     badge: '/icons/icon-192.png',
-    data: { url: '/#daily' },
+    data: { url: '/daily' },
   }));
 });

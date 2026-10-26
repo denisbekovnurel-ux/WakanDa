@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { Link, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { useToday } from './hooks/TodayContext';
 import { usePrefersDark } from './hooks/usePrefersDark';
 import { useAppStore } from './store/AppStore';
@@ -7,24 +8,26 @@ import { useReminders } from './hooks/useReminders';
 import { pluralize } from './utils/pluralize';
 import { isPaused } from './utils/calc';
 import { TIMINGS } from './config/timings';
-import { HabitManager } from './components/HabitManager';
 import { BackupControls } from './components/BackupControls';
 import { StateHistory } from './components/StateHistory';
 import { SyncConflictDialog } from './components/SyncConflictDialog';
 import { PasswordChangeDialog } from './components/PasswordChangeDialog';
-import { OneOffList } from './components/OneOffList';
-import { MonthGrid } from './components/MonthGrid';
-import { StatsPage } from './components/Stats/StatsPage';
-import { NotesPanel } from './components/NotesPanel/NotesPanel';
 import { getBadges } from './utils/badges';
 import { useAuth } from './auth/AuthContext';
 import { ensurePushSubscription, disablePushSubscription } from './utils/push';
 import { sendTestPush } from './api/pushApi';
-import { AdminPanel } from './components/Admin/AdminPanel';
 import { FeedbackViewport } from './components/Feedback';
 import { useFeedback } from './components/FeedbackContext';
+import { PageFallback } from './components/PageFallback';
 import quotes from './data/quotes.json';
 import './App.css';
+
+// Ленивые разделы: попадают в бандл только когда пользователь их открыл.
+// Главная остаётся в основном чанке — это точка входа после входа в аккаунт.
+const DailyPage = lazy(() => import('./pages/DailyPage'));
+const OneOffPage = lazy(() => import('./pages/OneOffPage'));
+const StatsPage = lazy(() => import('./components/Stats/StatsPage').then((module) => ({ default: module.StatsPage })));
+const AdminPanel = lazy(() => import('./components/Admin/AdminPanel').then((module) => ({ default: module.AdminPanel })));
 
 const pages = {
   home: { label: 'HOME 홈', en: 'HOME', ko: '홈', eyebrow: 'ПЛАН НА ДЕЙСТВИЕ', title: 'Точка старта', description: 'Порядок в делах. Холодная голова. Каждый день — шаг вперёд.', image: 'home-bg.jpg' },
@@ -36,9 +39,15 @@ const pages = {
 
 const dateFormatter = new Intl.DateTimeFormat('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
 
-function getPageFromHash() {
-  const key = window.location.hash.slice(1);
-  return Object.hasOwn(pages, key) ? key : 'home';
+function pathForPage(key) {
+  return key === 'home' ? '/' : `/${key}`;
+}
+
+function AdminOnly({ allowed }) {
+  if (!allowed) {
+    return <section className="section-card page-section"><p className="section-description">Раздел доступен только администратору.</p></section>;
+  }
+  return <AdminPanel />;
 }
 
 function App() {
@@ -53,11 +62,14 @@ function App() {
   const nextTheme = theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system';
   const themeNames = { system: 'как в системе', light: 'светлая', dark: 'тёмная' };
   const themeIcons = { system: '◐', light: '☼', dark: '☾' };
-  const [page, setPage] = useState(getPageFromHash);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [quoteIndex, setQuoteIndex] = useState(() => Math.floor(Math.random() * quotes.length));
   const { today, todayKey } = useToday();
+  const location = useLocation();
+  const pageKey = location.pathname === '/' ? 'home' : location.pathname.replace(/^\//, '');
+  const page = Object.hasOwn(pages, pageKey) ? pageKey : null;
+  const currentPage = pages[page] ?? pages.home;
   const activeTasks = selectActiveHabits(state);
   const completedToday = activeTasks.filter((task) => task.history?.[todayKey] === 'done').length;
   // Не напоминаем о привычках, которые сегодня не по расписанию, на паузе
@@ -74,12 +86,6 @@ function App() {
   const { enable: requestReminderPermission } = useReminders({ enabled: reminderEnabled, reminderTime, pendingHabits, todayKey });
 
   useEffect(() => {
-    function syncPage() { setPage(getPageFromHash()); }
-    window.addEventListener('hashchange', syncPage);
-    return () => window.removeEventListener('hashchange', syncPage);
-  }, []);
-
-  useEffect(() => {
     function captureInstallPrompt(event) {
       event.preventDefault();
       setInstallPrompt(event);
@@ -87,6 +93,13 @@ function App() {
     window.addEventListener('beforeinstallprompt', captureInstallPrompt);
     return () => window.removeEventListener('beforeinstallprompt', captureInstallPrompt);
   }, []);
+
+  // При переходе между страницами остаёмся наверху — иначе длинная главная
+  // «передаёт» свою прокрутку короткому разделу.
+  useEffect(() => {
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [location.pathname]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -150,14 +163,12 @@ function App() {
     setInstallPrompt(null);
   }
 
-  const currentPage = pages[page];
-
   return (
     <div className={`app-shell ${effectiveTheme === 'light' ? 'theme-light' : ''}`}>
       <header className="topbar">
-        <a className="brand" href="#home" aria-label="WakanDa 와칸다 — на главную"><span className="brand-mark" aria-hidden="true">W</span><span>WakanDa<span className="brand-period">.</span></span><span className="brand-ko">와칸다</span></a>
+        <Link className="brand" to="/" aria-label="WakanDa 와칸다 — на главную"><span className="brand-mark" aria-hidden="true">W</span><span>WakanDa<span className="brand-period">.</span></span><span className="brand-ko">와칸다</span></Link>
         <nav className="main-nav" aria-label="Основная навигация">
-          {Object.entries(pages).filter(([key]) => key !== 'admin' || isAdmin).map(([key, item]) => <a key={key} href={`#${key}`} className={page === key ? 'is-active' : ''} aria-current={page === key ? 'page' : undefined}>{item.label}</a>)}
+          {Object.entries(pages).filter(([key]) => key !== 'admin' || isAdmin).map(([key, item]) => <NavLink key={key} to={pathForPage(key)} end={key === 'home'} className={({ isActive }) => (isActive ? 'is-active' : '')}>{item.label}</NavLink>)}
         </nav>
         {page === 'home' && <span className="pending-reminder" aria-live="polite">{pendingHabits ? `ОСТАЛОСЬ ОТМЕТИТЬ ${pendingHabits}` : 'ВСЁ ОТМЕЧЕНО'}</span>}
         <div className="user-menu">
@@ -170,33 +181,34 @@ function App() {
       </header>
 
       <main className="page-content">
-        <section className={`page-hero page-hero--${page}`} style={{ '--page-photo': `url('/images/${currentPage.image}')` }} aria-labelledby="page-title">
+        <section className={`page-hero page-hero--${page ?? 'home'}`} style={{ '--page-photo': `url('/images/${currentPage.image}')` }} aria-labelledby="page-title">
           <div className="page-hero-copy"><p className="eyebrow">{currentPage.eyebrow}</p><h1 id="page-title">{currentPage.title}</h1><p className="page-hero-description">{currentPage.description}</p></div>
           <div className="hero-watermark" aria-hidden="true">{currentPage.ko}</div>
         </section>
 
-        {page === 'home' && (
-          <>
-            <section className="stats-grid" aria-label="Сводка">
-              <article className="stat-card"><span className="stat-icon" aria-hidden="true">✦</span><div><p className="stat-label">Выполнено сегодня</p><p className="stat-value">{completedToday}<span> / {activeTasks.length}</span></p><p className="stat-foot">{pluralize(completedToday, 'привычка выполнена', 'привычки выполнены', 'привычек выполнено')}</p></div></article>
-              <article className="stat-card stat-card--red"><span className="stat-icon" aria-hidden="true">⚔</span><div><p className="stat-label">Разовые задачи</p><p className="stat-value">{oneOffTasks.filter((task) => !task.done).length}<span> в работе</span></p><p className="stat-foot">{oneOffTasks.filter((task) => task.done).length} закрыто и в архиве</p></div></article>
-              <article className="stat-card stat-card--gold"><span className="stat-icon" aria-hidden="true">🏅</span><div><p className="stat-label">Награды</p><p className="stat-value">{unlockedCount}<span> / {badges.length}</span></p><p className="stat-foot"><a className="text-link" href="#stats">смотреть достижения</a></p></div></article>
-            </section>
-            <div className="home-grid">
-              <section className="section-card home-preview"><div className="section-heading"><div><p className="eyebrow">ДЕНЬ ЗА ДНЁМ</p><h2>Твои привычки</h2></div><a className="text-link" href="#daily">Открыть месяц <span aria-hidden="true">↗</span></a></div><p className="section-description">{activeTasks.length ? `В списке ${activeTasks.length} ${pluralize(activeTasks.length, 'привычка', 'привычки', 'привычек')}. Продолжай держать ритм.` : 'Добавь привычку и начни собирать свою серию.'}</p><ul className="home-habit-list">{activeTasks.slice(0, 4).map((task) => <li key={task.id}><span className={`home-habit-mark ${task.history?.[todayKey] === 'done' ? 'is-done' : ''}`}>{task.history?.[todayKey] === 'done' ? '✓' : '·'}</span><span>{task.title}</span></li>)}</ul>{activeTasks.length > 4 && <a className="text-link home-more" href="#daily">И ещё {activeTasks.length - 4} привычек</a>}</section>
-              <section className="section-card home-focus"><p className="eyebrow">НЕ ЖДИ ИДЕАЛЬНОГО МОМЕНТА</p><h2>Выбери дело.<br /><span>Доведи до конца.</span></h2><p className="section-description">Характер крепнет не от обещаний, а от выполненных решений.</p><a className="button button--red" href="#oneoff">К списку задач <span aria-hidden="true">→</span></a></section>
-            </div>
-            <section className="section-card settings-panel"><div><p className="eyebrow">СОХРАНИ СВОЙ ПРОГРЕСС</p><h2>Инструменты и напоминания</h2><p className="section-description">Напоминание приходит в выбранное время. С включёнными push-уведомлениями сервер пришлёт его, даже когда вкладка закрыта (нужно установить приложение и разрешить уведомления).</p></div><div className="reminder-controls"><label>Время напоминания<input type="time" value={reminderTime} onChange={(event) => actions.setReminderTime(event.target.value)} /></label><button className="button button--red" type="button" onClick={toggleReminders}>{reminderEnabled ? 'Отключить напоминания' : 'Включить напоминание'}</button>{reminderEnabled && <button className="button button--light" type="button" onClick={sendTestNotification}>Проверить уведомление</button>}</div><BackupControls />{installPrompt && <button className="button button--light install-button" type="button" onClick={installApp}>Установить WakanDa</button>}<StateHistory /></section>
-          </>
-        )}
-
-        {page === 'daily' && <section className="section-card page-section"><MonthGrid /><NotesPanel /><div className="daily-task-manager"><div className="section-heading"><div><p className="eyebrow">ДИСЦИПЛИНА КАЖДЫЙ ДЕНЬ</p><h2>Управление привычками</h2></div><span className="section-count">{activeTasks.length} {pluralize(activeTasks.length, 'привычка', 'привычки', 'привычек')}</span></div><HabitManager /></div></section>}
-
-        {page === 'oneoff' && <section className="section-card page-section"><div className="section-heading"><div><p className="eyebrow">ОДИН РАЗ — НО ДО КОНЦА</p><h2>Список действий</h2></div><span className="section-count">{oneOffTasks.filter((task) => !task.done).length} открыто</span></div><p className="section-description">Небольшие дела тоже требуют решения. Закрывай их одно за другим.</p><OneOffList /></section>}
-
-        {page === 'stats' && <StatsPage />}
-
-        {page === 'admin' && (isAdmin ? <AdminPanel /> : <section className="section-card page-section"><p className="section-description">Раздел доступен только администратору.</p></section>)}
+        <Suspense fallback={<PageFallback />}>
+          <Routes>
+            <Route path="/" element={(
+              <>
+                <section className="stats-grid" aria-label="Сводка">
+                  <article className="stat-card"><span className="stat-icon" aria-hidden="true">✦</span><div><p className="stat-label">Выполнено сегодня</p><p className="stat-value">{completedToday}<span> / {activeTasks.length}</span></p><p className="stat-foot">{pluralize(completedToday, 'привычка выполнена', 'привычки выполнены', 'привычек выполнено')}</p></div></article>
+                  <article className="stat-card stat-card--red"><span className="stat-icon" aria-hidden="true">⚔</span><div><p className="stat-label">Разовые задачи</p><p className="stat-value">{oneOffTasks.filter((task) => !task.done).length}<span> в работе</span></p><p className="stat-foot">{oneOffTasks.filter((task) => task.done).length} закрыто и в архиве</p></div></article>
+                  <article className="stat-card stat-card--gold"><span className="stat-icon" aria-hidden="true">🏅</span><div><p className="stat-label">Награды</p><p className="stat-value">{unlockedCount}<span> / {badges.length}</span></p><p className="stat-foot"><Link className="text-link" to="/stats">смотреть достижения</Link></p></div></article>
+                </section>
+                <div className="home-grid">
+                  <section className="section-card home-preview"><div className="section-heading"><div><p className="eyebrow">ДЕНЬ ЗА ДНЁМ</p><h2>Твои привычки</h2></div><Link className="text-link" to="/daily">Открыть месяц <span aria-hidden="true">↗</span></Link></div><p className="section-description">{activeTasks.length ? `В списке ${activeTasks.length} ${pluralize(activeTasks.length, 'привычка', 'привычки', 'привычек')}. Продолжай держать ритм.` : 'Добавь привычку и начни собирать свою серию.'}</p><ul className="home-habit-list">{activeTasks.slice(0, 4).map((task) => <li key={task.id}><span className={`home-habit-mark ${task.history?.[todayKey] === 'done' ? 'is-done' : ''}`}>{task.history?.[todayKey] === 'done' ? '✓' : '·'}</span><span>{task.title}</span></li>)}</ul>{activeTasks.length > 4 && <Link className="text-link home-more" to="/daily">И ещё {activeTasks.length - 4} привычек</Link>}</section>
+                  <section className="section-card home-focus"><p className="eyebrow">НЕ ЖДИ ИДЕАЛЬНОГО МОМЕНТА</p><h2>Выбери дело.<br /><span>Доведи до конца.</span></h2><p className="section-description">Характер крепнет не от обещаний, а от выполненных решений.</p><Link className="button button--red" to="/oneoff">К списку задач <span aria-hidden="true">→</span></Link></section>
+                </div>
+                <section className="section-card settings-panel"><div><p className="eyebrow">СОХРАНИ СВОЙ ПРОГРЕСС</p><h2>Инструменты и напоминания</h2><p className="section-description">Напоминание приходит в выбранное время. С включёнными push-уведомлениями сервер пришлёт его, даже когда вкладка закрыта (нужно установить приложение и разрешить уведомления).</p></div><div className="reminder-controls"><label>Время напоминания<input type="time" value={reminderTime} onChange={(event) => actions.setReminderTime(event.target.value)} /></label><button className="button button--red" type="button" onClick={toggleReminders}>{reminderEnabled ? 'Отключить напоминания' : 'Включить напоминание'}</button>{reminderEnabled && <button className="button button--light" type="button" onClick={sendTestNotification}>Проверить уведомление</button>}</div><BackupControls />{installPrompt && <button className="button button--light install-button" type="button" onClick={installApp}>Установить WakanDa</button>}<StateHistory /></section>
+              </>
+            )} />
+            <Route path="/daily" element={<DailyPage />} />
+            <Route path="/oneoff" element={<OneOffPage />} />
+            <Route path="/stats" element={<StatsPage />} />
+            <Route path="/admin" element={<AdminOnly allowed={isAdmin} />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
 
         <aside key={quoteIndex} className="quote-card" aria-label="Мотивационная цитата"><span className="quote-mark" aria-hidden="true">“</span><p>{quotes[quoteIndex].text}</p><span className="quote-caption">ДИСЦИПЛИНА · {String(quoteIndex + 1).padStart(2, '0')} / {quotes.length}</span></aside>
         <footer className="site-footer"><span>Выдержка создаёт результат.</span><span>WAKANDA 와칸다 <span aria-hidden="true">✳</span></span></footer>
