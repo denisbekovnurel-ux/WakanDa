@@ -24,7 +24,7 @@ function isPlainObject(value) {
 const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
-function isRealDateKey(value) {
+export function isRealDateKey(value) {
   if (typeof value !== 'string' || !DATE_KEY_RE.test(value)) return false;
   const [year, month, day] = value.split('-').map(Number);
   const date = new Date(year, month - 1, day);

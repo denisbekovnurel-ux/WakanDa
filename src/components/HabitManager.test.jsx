@@ -93,6 +93,15 @@ describe('HabitManager', () => {
     expect(mocks.store.actions.addHabit).not.toHaveBeenCalled();
   });
 
+  it('не создаёт привычку со слишком длинным названием', () => {
+    render(<HabitManager />);
+
+    addHabit('я'.repeat(81));
+
+    expect(screen.getByRole('alert').textContent).toBe('Название привычки — не больше 80 символов.');
+    expect(mocks.store.actions.addHabit).not.toHaveBeenCalled();
+  });
+
   it('создаёт привычку с выбранными днями и очищает поле', () => {
     render(<HabitManager />);
 

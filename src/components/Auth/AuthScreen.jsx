@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
+import { firstError, loginSchema, registrationSchema } from '../../validation/schemas';
 import { AuthBrand } from './Brand';
 
 export function AuthScreen() {
@@ -22,16 +23,12 @@ export function AuthScreen() {
   async function submit(event) {
     event.preventDefault();
     setError('');
-    const username = form.username.trim();
-    const password = form.password;
-    if (!username || !password) {
-      setError('Заполните логин и пароль');
+    const parsed = (mode === 'login' ? loginSchema : registrationSchema).safeParse(form);
+    if (!parsed.success) {
+      setError(firstError(parsed));
       return;
     }
-    if (mode === 'register' && password !== form.confirm) {
-      setError('Пароли не совпадают');
-      return;
-    }
+    const { username, password } = parsed.data;
     setBusy(true);
     try {
       if (mode === 'login') await login(username, password);

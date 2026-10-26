@@ -45,6 +45,25 @@ describe('PasswordChangeDialog', () => {
     expect(apiChangePassword).not.toHaveBeenCalled();
   });
 
+  it('требует текущий пароль, чтобы не сбросить его вслепую', () => {
+    render(<PasswordChangeDialog onClose={vi.fn()} />);
+
+    fill('', 'new-pass-1', 'new-pass-1');
+    submit();
+
+    expect(screen.getByRole('alert').textContent).toBe('Введите текущий пароль.');
+    expect(apiChangePassword).not.toHaveBeenCalled();
+  });
+
+  it('при пустых полях показывает свою ошибку, а не подсказку браузера', () => {
+    render(<PasswordChangeDialog onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByText('Сохранить новый пароль'));
+
+    expect(screen.getByRole('alert').textContent).toBe('Введите текущий пароль.');
+    expect(apiChangePassword).not.toHaveBeenCalled();
+  });
+
   it('отправляет токен и пароли, затем очищает поля и показывает успех', async () => {
     vi.mocked(apiChangePassword).mockResolvedValue({ ok: true });
     render(<PasswordChangeDialog onClose={vi.fn()} />);

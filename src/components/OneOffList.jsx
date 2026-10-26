@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/AppStore';
 import { useToday } from '../hooks/TodayContext';
+import { firstError, oneOffFormSchema } from '../validation/schemas';
 import { useFeedback } from './FeedbackContext';
 
 const priorityRank = { high: 0, normal: 1, low: 2 };
@@ -11,8 +12,11 @@ function RenameOneOff({ task }) {
   const [draft, setDraft] = useState(task.title);
 
   function save() {
-    const title = draft.trim();
-    if (title) actions.renameOneOff(task.id, title);
+    const parsed = oneOffFormSchema.pick({ title: true }).safeParse({ title: draft });
+    // Пустое или слишком длинное имя не сохраняем и не закрываем редактирование:
+    // иначе введённый текст исчезал бы без объяснения.
+    if (!parsed.success) return;
+    actions.renameOneOff(task.id, parsed.data.title);
     setEditing(false);
   }
 
@@ -36,6 +40,7 @@ export function OneOffList() {
   const [title, setTitle] = useState('');
   const [deadline, setDeadline] = useState('');
   const [priority, setPriority] = useState('normal');
+  const [formError, setFormError] = useState('');
   const [filter, setFilter] = useState('all'); // all | overdue | high
   const [sortMode, setSortMode] = useState('auto'); // auto | manual
 
@@ -58,9 +63,13 @@ export function OneOffList() {
 
   function handleSubmit(event) {
     event.preventDefault();
-    const trimmedTitle = title.trim();
-    if (!trimmedTitle) return;
-    actions.addOneOff(trimmedTitle, { deadline, priority }, todayKey);
+    const parsed = oneOffFormSchema.safeParse({ title, deadline, priority });
+    if (!parsed.success) {
+      setFormError(firstError(parsed));
+      return;
+    }
+    setFormError('');
+    actions.addOneOff(parsed.data.title, { deadline: parsed.data.deadline, priority: parsed.data.priority }, todayKey);
     setTitle('');
     setDeadline('');
     setPriority('normal');
@@ -100,10 +109,11 @@ export function OneOffList() {
 
   return (
     <div className="one-off-list">
-      <form className="add-form" onSubmit={handleSubmit}>
-        <input type="text" aria-label="Название разовой задачи" placeholder="Например, отправить документы" value={title} onChange={(event) => setTitle(event.target.value)} maxLength="100" required />
-        <div className="one-off-form-options"><label>Срок<input type="date" min={todayKey} aria-label="Срок выполнения" value={deadline} onChange={(event) => setDeadline(event.target.value)} /></label><label>Приоритет<select aria-label="Приоритет задачи" value={priority} onChange={(event) => setPriority(event.target.value)}><option value="high">Высокий</option><option value="normal">Обычный</option><option value="low">Низкий</option></select></label></div>
+      <form className="add-form" onSubmit={handleSubmit} noValidate>
+        <input type="text" aria-label="Название разовой задачи" placeholder="Например, отправить документы" value={title} onChange={(event) => { setFormError(''); setTitle(event.target.value); }} maxLength="100" required />
+        <div className="one-off-form-options"><label>Срок<input type="date" min={todayKey} aria-label="Срок выполнения" value={deadline} onChange={(event) => { setFormError(''); setDeadline(event.target.value); }} /></label><label>Приоритет<select aria-label="Приоритет задачи" value={priority} onChange={(event) => { setFormError(''); setPriority(event.target.value); }}><option value="high">Высокий</option><option value="normal">Обычный</option><option value="low">Низкий</option></select></label></div>
         <button type="submit" className="button button--red"><span aria-hidden="true">＋</span> Добавить задачу</button>
+        {formError && <p className="backup-message" role="alert">{formError}</p>}
       </form>
 
       <div className="one-off-toolbar">

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { getHabitStats, isPaused } from '../utils/calc';
 import { useAppStore } from '../store/AppStore';
 import { useToday } from '../hooks/TodayContext';
+import { firstError, habitFormSchema } from '../validation/schemas';
 import { useFeedback } from './FeedbackContext';
 
 const weekdays = [
@@ -125,19 +126,16 @@ export function HabitManager() {
 
   function handleSubmit(event) {
     event.preventDefault();
-    const trimmedTitle = title.trim();
     // Раньше форма просто закрывалась: привычка не создавалась, а человек
-    // решал, что всё нажатое потерялось.
-    if (!trimmedTitle) {
-      setFormError('Укажи название привычки.');
-      return;
-    }
-    if (schedule.length === 0) {
-      setFormError('Выбери хотя бы один день выполнения.');
+    // решал, что всё нажатое потерялось. Теперь проверяет схема, а ошибка
+    // всегда остаётся на экране рядом с формой.
+    const parsed = habitFormSchema.safeParse({ title, schedule });
+    if (!parsed.success) {
+      setFormError(firstError(parsed));
       return;
     }
     setFormError('');
-    actions.addHabit(trimmedTitle, weekdays.filter((day) => schedule.includes(day.value)).map((day) => day.value));
+    actions.addHabit(parsed.data.title, weekdays.filter((day) => parsed.data.schedule.includes(day.value)).map((day) => day.value));
     setTitle('');
   }
 

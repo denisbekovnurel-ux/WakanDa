@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiChangePassword, apiLogoutEverywhere } from '../api/authApi';
 import { useAuth } from '../auth/AuthContext';
+import { firstError, passwordChangeSchema } from '../validation/schemas';
 
 /**
  * Диалог «Аккаунт»: смена пароля и завершение всех остальных сессий.
@@ -28,17 +29,14 @@ export function PasswordChangeDialog({ onClose }) {
   async function handleSubmit(event) {
     event.preventDefault();
     setNote(null);
-    if (next.length < 6) {
-      setNote({ ok: false, text: 'Новый пароль должен быть не короче 6 символов.' });
-      return;
-    }
-    if (next !== confirm) {
-      setNote({ ok: false, text: 'Пароли не совпадают.' });
+    const parsed = passwordChangeSchema.safeParse({ currentPassword: current, newPassword: next, confirmPassword: confirm });
+    if (!parsed.success) {
+      setNote({ ok: false, text: firstError(parsed) });
       return;
     }
     setBusy(true);
     try {
-      await apiChangePassword(token, current, next);
+      await apiChangePassword(token, parsed.data.currentPassword, parsed.data.newPassword);
       setNote({ ok: true, text: 'Пароль изменён. Сессии на других устройствах завершены.' });
       setCurrent('');
       setNext('');
@@ -69,7 +67,7 @@ export function PasswordChangeDialog({ onClose }) {
         <p className="eyebrow">АККАУНТ</p>
         <h2 id="password-dialog-title">Пароль и сессии</h2>
         <p className="section-description">Смена пароля «разлогинивает» все остальные устройства — на этом останешься ты.</p>
-        <form className="auth-form" onSubmit={handleSubmit}>
+        <form className="auth-form" onSubmit={handleSubmit} noValidate>
           <label><span>Текущий пароль</span><input type="password" autoComplete="current-password" required value={current} onChange={(event) => setCurrent(event.target.value)} /></label>
           <label><span>Новый пароль (от 6 символов)</span><input type="password" autoComplete="new-password" required value={next} onChange={(event) => setNext(event.target.value)} /></label>
           <label><span>Повтори новый пароль</span><input type="password" autoComplete="new-password" required value={confirm} onChange={(event) => setConfirm(event.target.value)} /></label>

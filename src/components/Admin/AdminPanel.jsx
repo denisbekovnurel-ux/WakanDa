@@ -9,6 +9,7 @@ import {
   apiAdminUsers,
 } from '../../api/authApi';
 import { TIMINGS } from '../../config/timings';
+import { adminPasswordSchema, firstError } from '../../validation/schemas';
 
 const STATUS_LABELS = { pending: 'Ожидает', approved: 'Одобрен', blocked: 'Заблокирован' };
 const dateTimeFormatter = new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
@@ -96,14 +97,15 @@ export function AdminPanel() {
       confirmText: 'Сбросить пароль',
     });
     if (password == null) return;
-    if (password.length < 6) {
-      notify('Пароль должен быть не короче 6 символов.', { tone: 'error' });
+    const parsed = adminPasswordSchema.safeParse(password);
+    if (!parsed.success) {
+      notify(firstError(parsed), { tone: 'error' });
       return;
     }
     setBusyId(id);
     setNotice('');
     try {
-      await apiAdminResetPassword(token, id, password);
+      await apiAdminResetPassword(token, id, parsed.data);
       setNotice('Пароль сброшен, пользователь разлогинен');
     } catch (err) {
       setError(err?.message || 'Не удалось сбросить пароль');
@@ -223,8 +225,9 @@ export function AdminPanel() {
           <h3>Один постоянный администратор</h3>
           <p className="section-description">
             Аккаунт администратора единственный и неизменный: его нельзя удалить, заблокировать
-            или создать второго. Данные входа хранятся на сервере и автоматически
-            восстанавливаются при каждом запуске.
+            или создать второго. Логин зафиксирован, а пароль, который вы сменили сами,
+            сервер не сбрасывает. Если задан <code>WAKANDA_ADMIN_PASS</code>, он применяется
+            при каждом запуске.
           </p>
         </div>
         <div className="admin-note-card">

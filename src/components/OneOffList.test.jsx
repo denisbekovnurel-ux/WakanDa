@@ -49,6 +49,15 @@ describe('OneOffList', () => {
     expect(screen.getByText('ПРОСРОЧЕНО · 2026-10-20')).toBeTruthy();
   });
 
+  it('не добавляет задачу с пустым названием и объясняет почему', () => {
+    render(<OneOffList />);
+
+    fireEvent.click(screen.getByText('Добавить задачу'));
+
+    expect(screen.getByRole('alert').textContent).toBe('Укажи название задачи.');
+    expect(mocks.store.actions.addOneOff).not.toHaveBeenCalled();
+  });
+
   it('добавляет задачу с сегодняшней датой по умолчанию', () => {
     render(<OneOffList />);
 
@@ -110,6 +119,17 @@ describe('OneOffList', () => {
     fireEvent.click(screen.getByText('Сохранить'));
 
     expect(mocks.store.actions.renameOneOff).toHaveBeenCalledWith('a1', 'Отправить отчёт');
+  });
+
+  it('не сохраняет пустое переименование и оставляет поле открытым', () => {
+    render(<OneOffList />);
+
+    fireEvent.click(screen.getByLabelText('Переименовать Отправить документы'));
+    fireEvent.change(screen.getByLabelText('Новое название задачи'), { target: { value: '   ' } });
+    fireEvent.click(screen.getByText('Сохранить'));
+
+    expect(mocks.store.actions.renameOneOff).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Новое название задачи').value).toBe('   ');
   });
 
   it('при включённом фильтре счётчик показывает только видимые задачи', () => {
