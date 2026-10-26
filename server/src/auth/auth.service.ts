@@ -80,7 +80,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   // Гарантирует РОВНО ОДИН аккаунт администратора с фиксированными данными.
   // Админ не меняется и не дублируется:
   //   • нет админа — создать;
-  //   • пароль/статус/роль разошлись — починить;
+  //   • статус/роль разошлись — починить (пароль — только если задан env);
   //   • появился второй админ — понизить его до обычного пользователя.
   private ensureAdmin() {
     const username = (process.env.WAKANDA_ADMIN_USER || '').trim() || FIXED_ADMIN_USERNAME;
