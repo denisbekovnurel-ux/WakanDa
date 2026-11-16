@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
@@ -60,11 +60,23 @@ describe('миграции на новой базе', () => {
     const service = open(tempDir());
     const db = service.connection;
 
-    expect(appliedVersions(db)).toEqual([1, 2, 3]);
+    expect(appliedVersions(db)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(columns(db, 'user_state')).toContain('revision');
     expect(columns(db, 'push_subscriptions')).toContain('device_id');
+    expect(columns(db, 'push_log')).toContain('slot');
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map((row) => row.name);
-    for (const table of ['users', 'sessions', 'settings', 'user_state', 'user_state_history', 'push_subscriptions', 'push_log']) {
+    for (const table of [
+      'users',
+      'sessions',
+      'settings',
+      'user_state',
+      'user_state_history',
+      'push_subscriptions',
+      'push_log',
+      'telegram_links',
+      'telegram_link_codes',
+      'reminders',
+    ]) {
       expect(tables, `нет таблицы ${table}`).toContain(table);
     }
   });
@@ -82,10 +94,29 @@ describe('миграции на новой базе', () => {
 
     const second = open(dir);
 
-    expect(appliedVersions(second.connection)).toEqual([1, 2, 3]);
+    expect(appliedVersions(second.connection)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(second.connection.prepare(`SELECT version, applied_at FROM ${MIGRATIONS_TABLE} ORDER BY version`).all()).toEqual(appliedAt);
     expect(second.connection.prepare('SELECT username FROM users WHERE id = ?').get('u1')).toEqual({ username: 'alice' });
     expect(second.connection.prepare('SELECT revision FROM user_state WHERE user_id = ?').get('u1')).toEqual({ revision: 5 });
+  });
+
+  it('делает резервную копию перед применением отложенной миграции', () => {
+    const dir = tempDir();
+    const first = open(dir);
+    first.connection
+      .prepare('INSERT INTO users (id, username, password_hash, role, status, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('u1', 'alice', 'hash', 'user', 'approved', new Date().toISOString());
+    // Имитируем базу, на которую пришла новая миграция.
+    first.connection.prepare(`DELETE FROM ${MIGRATIONS_TABLE} WHERE version = 6`).run();
+    first.onModuleDestroy();
+    opened.splice(opened.indexOf(first), 1);
+
+    const second = open(dir);
+    const backups = readdirSync(join(dir, 'backups'));
+
+    expect(backups.some((name) => name.startsWith('pre-migration-') && name.endsWith('.db'))).toBe(true);
+    expect(second.connection.prepare('SELECT username FROM users WHERE id = ?').get('u1')).toEqual({ username: 'alice' });
+    expect(appliedVersions(second.connection)).toEqual([1, 2, 3, 4, 5, 6]);
   });
 });
 
@@ -130,10 +161,16 @@ describe('миграции на базе прошлой версии', () => {
 
     expect(columns(service.connection, 'user_state')).toContain('revision');
     expect(columns(service.connection, 'push_subscriptions')).toContain('device_id');
+    expect(columns(service.connection, 'push_log')).toContain('slot');
     expect(service.connection.prepare('SELECT revision, data FROM user_state WHERE user_id = ?').get('u1')).toEqual({ revision: 0, data: '{"tasks":[]}' });
     expect(service.connection.prepare('SELECT device_id FROM push_subscriptions WHERE user_id = ?').get('u1')).toEqual({ device_id: null });
     expect(service.connection.prepare('SELECT username FROM users WHERE id = ?').get('u1')).toEqual({ username: 'alice' });
-    expect(appliedVersions(service.connection)).toEqual([1, 2, 3]);
+    // Telegram-таблицы появляются и на старой базе: привязка — часть схемы.
+    const tables = (service.connection.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map((row) => row.name);
+    expect(tables).toContain('telegram_links');
+    expect(tables).toContain('telegram_link_codes');
+    expect(tables).toContain('reminders');
+    expect(appliedVersions(service.connection)).toEqual([1, 2, 3, 4, 5, 6]);
   });
 });
 

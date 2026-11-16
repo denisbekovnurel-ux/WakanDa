@@ -7,5 +7,6 @@ import { AuthModule } from '../auth/auth.module';
   imports: [AuthModule],
   controllers: [StateController],
   providers: [StateService],
+  exports: [StateService],
 })
 export class StateModule {}

@@ -1,9 +1,22 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, OnModuleDestroy, OnModuleInit, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+  Optional,
+  UnauthorizedException,
+} from '@nestjs/common';
 import Database from 'better-sqlite3';
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseService } from '../database/database.service';
+import { SettingsService } from '../database/settings.service';
 import { FIXED_ADMIN_USERNAME } from './admin.config';
 import { logger } from '../observability/logger';
 
@@ -36,8 +49,22 @@ type UserRow = {
   last_seen_at: string | null;
 };
 
+type LoginAttemptState = {
+  count: number;
+  firstAt: number;
+  lockedUntil: number | null;
+};
+
 // Сессия живёт 30 дней без входа.
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+
+// Защита от перебора паролей (credential stuffing): после нескольких неудачных
+// попыток по одному логину+IP вход блокируется на всё более долгий срок.
+const MAX_FAILED_LOGINS = 5;
+const FAILED_WINDOW_MS = 10 * 60 * 1000; // окно подсчёта попыток
+const LOCKOUT_BASE_MS = 5 * 60 * 1000; // стартовая длительность блокировки
+const LOCKOUT_MAX_MS = 24 * 60 * 60 * 1000; // потолок длительности блокировки
+const MAX_LOGIN_ATTEMPT_ENTRIES = 5000; // после этого начинаем подчищать карту
 // Активной сессии продлеваем срок, когда до конца осталось меньше недели
 // (скользящая сессия: не заставляем заходить заново, пока пользуешься).
 const SLIDING_THRESHOLD_MS = 1000 * 60 * 60 * 24 * 7;
@@ -52,14 +79,21 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   private static readonly TOUCH_INTERVAL_MS = 30 * 1000;
   private readonly lastTouchAt = new Map<string, number>();
   private readonly db: Database.Database;
+  private readonly settings: SettingsService;
   private readonly dataDir: string;
   private cleanupTimer: NodeJS.Timeout | null = null;
+  // Неудачные попытки входа по логину+IP (в памяти, теряется при рестарте — это ок).
+  private readonly loginAttempts = new Map<string, LoginAttemptState>();
   // Хэш-заглушка для несуществующего логина: вход отвечает за то же время,
   // что и неверный пароль, и не выдаёт существование аккаунта по таймингу.
   private readonly dummyPasswordHash = this.hashPassword(randomBytes(18).toString('base64url'));
 
-  constructor(@Inject(DatabaseService) database: DatabaseService) {
+  constructor(
+    @Inject(DatabaseService) database: DatabaseService,
+    @Optional() @Inject(SettingsService) settings?: SettingsService | null,
+  ) {
     this.db = database.connection;
+    this.settings = settings ?? new SettingsService(database);
     this.dataDir = database.dataDir;
   }
 
@@ -105,9 +139,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     // от пользовательского без знания пароля нельзя, поэтому для баз без метки
     // делаем однократную ротацию: пароль становится случайным и попадает в
     // admin-credentials.txt. Метка в settings не даёт повторять это при каждом запуске.
-    let passwordRotated = Boolean(
-      this.db.prepare('SELECT value FROM settings WHERE key = ?').get(PASSWORD_ROTATED_SETTING),
-    );
+    let passwordRotated = Boolean(this.settings.get(PASSWORD_ROTATED_SETTING));
 
     if (!target) {
       const usernameOwner = this.db.prepare('SELECT id FROM users WHERE username = ?').get(username);
@@ -156,9 +188,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (passwordRotated) {
-      this.db
-        .prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
-        .run(PASSWORD_ROTATED_SETTING, '1');
+      this.settings.set(PASSWORD_ROTATED_SETTING, '1');
     }
 
     target = this.db.prepare('SELECT * FROM users WHERE id = ?').get(target.id) as UserRow;
@@ -248,16 +278,24 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     return { token, user: this.toPublic(user) };
   }
 
-  login(usernameRaw: unknown, passwordRaw: unknown): AuthResult {
+  login(usernameRaw: unknown, passwordRaw: unknown, ip = 'unknown'): AuthResult {
     const username = String(usernameRaw ?? '').trim();
     const password = String(passwordRaw ?? '');
     if (!username || !password) throw new BadRequestException('Введите логин и пароль');
+    // Раньше любых проверок: счётчик не должен тикать от пустых полей.
+    if (this.isLoginLocked(username, ip)) {
+      throw new HttpException(
+        'Слишком много попыток входа, попробуйте позже',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
 
     const row = this.db.prepare('SELECT * FROM users WHERE username = ?').get(username) as UserRow | undefined;
     // Для несуществующего логина всё равно считаем scrypt, чтобы время ответа
     // не подсказывало, зарегистрирован аккаунт или нет.
     const passwordOk = this.verifyPassword(password, row?.password_hash ?? this.dummyPasswordHash);
     if (!row || !passwordOk) {
+      this.recordFailedLogin(username, ip);
       throw new UnauthorizedException('Неверный логин или пароль');
     }
     if (row.status === 'blocked') {
@@ -265,7 +303,62 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     }
     const token = this.createSession(row.id);
     this.touch(row.id);
+    this.clearLoginAttempts(username, ip);
     return { token, user: this.toPublic(row) };
+  }
+
+  // ─────────────────────── Защита от перебора ───────────────────────
+
+  private loginKey(username: string, ip: string): string {
+    return `${username.toLowerCase()}|${ip || 'unknown'}`;
+  }
+
+  private currentAttempt(username: string, ip: string): LoginAttemptState | undefined {
+    const key = this.loginKey(username, ip);
+    const state = this.loginAttempts.get(key);
+    if (!state) return undefined;
+    // Окно истекло — попытки забываем, чтобы не блокировать бесконечно.
+    if (Date.now() - state.firstAt > FAILED_WINDOW_MS) {
+      this.loginAttempts.delete(key);
+      return undefined;
+    }
+    return state;
+  }
+
+  private isLoginLocked(username: string, ip: string): boolean {
+    const state = this.currentAttempt(username, ip);
+    if (!state) return false;
+    return state.count >= MAX_FAILED_LOGINS && state.lockedUntil !== null && state.lockedUntil > Date.now();
+  }
+
+  private recordFailedLogin(username: string, ip: string) {
+    // Не даём карте неудачных попыток расти бесконечно.
+    if (this.loginAttempts.size >= MAX_LOGIN_ATTEMPT_ENTRIES) {
+      const oldest = Date.now() - FAILED_WINDOW_MS;
+      for (const [key, state] of this.loginAttempts) {
+        if (state.firstAt < oldest) this.loginAttempts.delete(key);
+      }
+    }
+    const now = Date.now();
+    const key = this.loginKey(username, ip);
+    const current = this.currentAttempt(username, ip);
+    if (!current) {
+      this.loginAttempts.set(key, { count: 1, firstAt: now, lockedUntil: null });
+      return;
+    }
+    const count = current.count + 1;
+    let lockedUntil = current.lockedUntil;
+    if (count >= MAX_FAILED_LOGINS) {
+      // Экспоненциальный рост блокировки с потолком в сутки: каждая неудачная
+      // попытка сверх порога удваивает срок, а не сбрасывает его.
+      const exponent = count - MAX_FAILED_LOGINS;
+      lockedUntil = now + Math.min(LOCKOUT_MAX_MS, LOCKOUT_BASE_MS * 2 ** exponent);
+    }
+    this.loginAttempts.set(key, { count, firstAt: current.firstAt, lockedUntil });
+  }
+
+  private clearLoginAttempts(username: string, ip: string) {
+    this.loginAttempts.delete(this.loginKey(username, ip));
   }
 
   private validatePassword(password: string) {

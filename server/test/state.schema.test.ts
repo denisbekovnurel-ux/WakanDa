@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { LIMITS, StateValidationError, sanitizeAppState } from '../src/state/state.schema';
 
 const base = {
-  version: 2,
+  version: 3,
   tasks: [],
   oneOffTasks: [],
   notes: {},
-  theme: 'system',
+  theme: 'dark',
+  reminderTimes: ['09:00', '14:00', '20:00'],
   reminderTime: '20:00',
   reminderEnabled: false,
   lastAutoBackupAt: 0,
@@ -16,7 +17,14 @@ describe('sanitizeAppState', () => {
   it('нормализует пустое состояние', () => {
     const state = sanitizeAppState({});
     expect(state.tasks).toEqual([]);
-    expect(state.theme).toBe('system');
+    expect(state.theme).toBe('dark');
+    expect(state.reminderTimes).toEqual(['09:00', '14:00', '20:00']);
+    expect(state.reminderTime).toBe('09:00');
+  });
+
+  it('переносит старое одиночное время в три слота', () => {
+    const state = sanitizeAppState({ ...base, reminderTimes: undefined, reminderTime: '20:00' });
+    expect(state.reminderTimes).toEqual(['09:00', '14:00', '20:00']);
     expect(state.reminderTime).toBe('20:00');
   });
 
@@ -68,15 +76,24 @@ describe('sanitizeAppState', () => {
     expect(() => sanitizeAppState({ ...base, tasks: [{ title: 'Бег', pauseRanges: [{ from: '2026-10-05' }] }] })).toThrow(/пауза/i);
   });
 
-  it('принимает темы light/dark/system, иначе — system', () => {
+  it('принимает темы light/dark, иначе — dark', () => {
     expect(sanitizeAppState({ ...base, theme: 'light' }).theme).toBe('light');
     expect(sanitizeAppState({ ...base, theme: 'dark' }).theme).toBe('dark');
-    expect(sanitizeAppState({ ...base, theme: 'neon' }).theme).toBe('system');
+    expect(sanitizeAppState({ ...base, theme: 'neon' }).theme).toBe('dark');
   });
 
   it('отбрасывает неизвестный приоритет и чинит дедлайн', () => {
     expect(() => sanitizeAppState({ ...base, oneOffTasks: [{ title: 'X', priority: 'urgent' }] })).toThrow(/приоритет/i);
     expect(() => sanitizeAppState({ ...base, oneOffTasks: [{ title: 'X', deadline: '30-10-2026' }] })).toThrow(/дедлайн/i);
+  });
+
+  it('канонизирует время напоминания разовой задачи', () => {
+    const state = sanitizeAppState({
+      ...base,
+      oneOffTasks: [{ title: 'X', reminderAt: '2026-10-01T21:00:00+03:00' }],
+    });
+    expect(state.oneOffTasks[0].reminderAt).toBe('2026-10-01T18:00:00.000Z');
+    expect(() => sanitizeAppState({ ...base, oneOffTasks: [{ title: 'X', reminderAt: 'не дата' }] })).toThrow(/напоминания/i);
   });
 
   it('отбрасывает слишком длинную и пустую заметку', () => {

@@ -5,7 +5,9 @@ import { randomUUID } from 'node:crypto';
 // Клиент тоже нормализует состояние (src/utils/schema.js), но сервер не должен
 // доверять клиенту: сюда может прийти что угодно, в том числе в обход интерфейса.
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
+
+export const DEFAULT_REMINDER_TIMES = ['09:00', '14:00', '20:00'] as const;
 
 export type HabitStatus = 'done' | 'failed' | 'empty';
 
@@ -27,9 +29,13 @@ export type AppState = {
     createdAt?: string;
     deadline?: string;
     priority?: string;
+    reminderAt?: string;
   }>;
   notes: Record<string, string>;
   theme: string;
+  /** До трёх ежедневных напоминаний о привычках. */
+  reminderTimes: string[];
+  /** Старое одиночное время: оставляем для совместимости со старыми клиентами. */
   reminderTime: string;
   reminderEnabled: boolean;
   lastAutoBackupAt: number;
@@ -40,8 +46,9 @@ export const DEFAULT_STATE: AppState = {
   tasks: [],
   oneOffTasks: [],
   notes: {},
-  theme: 'system',
-  reminderTime: '20:00',
+  theme: 'dark',
+  reminderTimes: [...DEFAULT_REMINDER_TIMES],
+  reminderTime: DEFAULT_REMINDER_TIMES[0],
   reminderEnabled: false,
   lastAutoBackupAt: 0,
 };
@@ -64,7 +71,7 @@ export const LIMITS = {
 
 const VALID_STATUSES = new Set<HabitStatus>(['done', 'failed', 'empty']);
 const VALID_PRIORITIES = new Set(['high', 'normal', 'low']);
-const VALID_THEMES = new Set(['light', 'dark', 'system']);
+const VALID_THEMES = new Set(['light', 'dark']);
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -119,6 +126,30 @@ function readCreatedAt(value: unknown, where: string): string | undefined {
 function readDateKey(value: string, where: string, label: string): string {
   if (!isRealDateKey(value)) fail(`${where}: некорректная ${label} «${value}»`);
   return value;
+}
+
+/** Три ежедневных времени: новые `reminderTimes` или старое одиночное `reminderTime`. */
+function readReminderTimes(input: Record<string, unknown>): string[] {
+  const candidates = [
+    ...(Array.isArray(input.reminderTimes) ? input.reminderTimes : []),
+    input.reminderTime,
+  ].filter((value): value is string => typeof value === 'string' && TIME_RE.test(value));
+  const times = [...new Set(candidates)].sort().slice(0, DEFAULT_REMINDER_TIMES.length);
+  for (const fallback of DEFAULT_REMINDER_TIMES) {
+    if (times.length >= DEFAULT_REMINDER_TIMES.length) break;
+    if (!times.includes(fallback)) times.push(fallback);
+  }
+  return times.sort();
+}
+
+function readReminderAt(value: unknown, where: string): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string') fail(`${where}: время напоминания должно быть текстом`);
+  const text = value.trim();
+  if (!text || text.length > LIMITS.timestamp) fail(`${where}: некорректное время напоминания`);
+  const parsed = Date.parse(text);
+  if (!Number.isFinite(parsed)) fail(`${where}: некорректное время напоминания «${text}»`);
+  return new Date(parsed).toISOString();
 }
 
 function readHistory(value: unknown, where: string): Record<string, HabitStatus> {
@@ -222,6 +253,7 @@ function sanitizeOneOff(input: unknown, index: number): AppState['oneOffTasks'][
     createdAt: readCreatedAt(input.createdAt, where),
     deadline,
     priority,
+    reminderAt: readReminderAt(input.reminderAt, where),
   };
 }
 
@@ -257,7 +289,10 @@ export function sanitizeAppState(input: unknown): AppState {
   if (!Array.isArray(oneOffInput)) fail('Поле «oneOffTasks» должно быть списком');
   if (oneOffInput.length > LIMITS.oneOffTasks) fail(`Слишком много разовых дел (максимум ${LIMITS.oneOffTasks})`);
 
-  const reminderTime = typeof input.reminderTime === 'string' && TIME_RE.test(input.reminderTime) ? input.reminderTime : '20:00';
+  const reminderTimes = readReminderTimes(input);
+  const reminderTime = typeof input.reminderTime === 'string' && TIME_RE.test(input.reminderTime)
+    ? input.reminderTime
+    : reminderTimes[0];
   const lastAutoBackupAt = Number(input.lastAutoBackupAt);
 
   const taskIds = new Set<string>();
@@ -281,7 +316,8 @@ export function sanitizeAppState(input: unknown): AppState {
     tasks,
     oneOffTasks,
     notes: readNotes(input.notes),
-    theme: typeof input.theme === 'string' && VALID_THEMES.has(input.theme) ? input.theme : 'system',
+    theme: typeof input.theme === 'string' && VALID_THEMES.has(input.theme) ? input.theme : 'dark',
+    reminderTimes,
     reminderTime,
     reminderEnabled: Boolean(input.reminderEnabled),
     lastAutoBackupAt: Number.isFinite(lastAutoBackupAt) ? lastAutoBackupAt : 0,

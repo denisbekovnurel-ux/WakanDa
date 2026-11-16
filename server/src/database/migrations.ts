@@ -145,6 +145,74 @@ export const MIGRATIONS: readonly Migration[] = [
       addColumnIfMissing(db, 'push_subscriptions', 'device_id', 'TEXT');
     },
   },
+  {
+    version: 4,
+    name: 'telegram_links',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS telegram_links (
+          user_id TEXT PRIMARY KEY,
+          chat_id TEXT NOT NULL UNIQUE,
+          username TEXT,
+          timezone_offset INTEGER NOT NULL DEFAULT 0,
+          linked_at TEXT NOT NULL,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_telegram_links_chat ON telegram_links(chat_id);
+        CREATE TABLE IF NOT EXISTS telegram_link_codes (
+          code TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          timezone_offset INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_telegram_codes_user ON telegram_link_codes(user_id);
+        CREATE INDEX IF NOT EXISTS idx_telegram_codes_expires ON telegram_link_codes(expires_at);
+      `);
+    },
+  },
+  {
+    version: 5,
+    name: 'reminders',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS reminders (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          text TEXT NOT NULL,
+          due_at TEXT NOT NULL,
+          timezone_offset INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          sent_at TEXT,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_reminders_user_due ON reminders(user_id, due_at);
+        CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(due_at);
+      `);
+    },
+  },
+  {
+    version: 6,
+    name: 'push_log_slots',
+    up: (db) => {
+      // Три ежедневных времени и напоминания о разовых задачах отправляются
+      // независимо, поэтому одного ключа (user, date) уже недостаточно.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS push_log_v6 (
+          user_id TEXT NOT NULL,
+          date_key TEXT NOT NULL,
+          slot TEXT NOT NULL DEFAULT '',
+          sent_at TEXT NOT NULL,
+          PRIMARY KEY (user_id, date_key, slot)
+        );
+        INSERT OR IGNORE INTO push_log_v6 (user_id, date_key, slot, sent_at)
+          SELECT user_id, date_key, '', sent_at FROM push_log;
+        DROP TABLE push_log;
+        ALTER TABLE push_log_v6 RENAME TO push_log;
+      `);
+    },
+  },
 ];
 
 /**
@@ -177,6 +245,22 @@ export function runMigrations(db: Database.Database, migrations: readonly Migrat
   }
 
   return applied;
+}
+
+/**
+ * Список миграций, которые ещё не применены. Нужен до запуска миграций,
+ * чтобы сделать резервную копию старой базы. Не создаёт таблицу
+ * schema_migrations — это делает только runMigrations.
+ */
+export function pendingMigrations(
+  db: Database.Database,
+  migrations: readonly Migration[] = MIGRATIONS,
+): Migration[] {
+  const table = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(MIGRATIONS_TABLE);
+  if (!table) return [...migrations].sort((left, right) => left.version - right.version);
+  return preparePending(db, migrations);
 }
 
 function preparePending(db: Database.Database, migrations: readonly Migration[]): Migration[] {

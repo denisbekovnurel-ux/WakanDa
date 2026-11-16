@@ -1,6 +1,7 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import Database from 'better-sqlite3';
 import { DatabaseService } from '../database/database.service';
+import { SettingsService } from '../database/settings.service';
 import { AppState, DEFAULT_STATE, HabitStatus, StateValidationError, sanitizeAppState } from './state.schema';
 import { logger } from '../observability/logger';
 
@@ -29,9 +30,14 @@ export type SnapshotMeta = {
 @Injectable()
 export class StateService {
   private readonly db: Database.Database;
+  private readonly settings: SettingsService;
 
-  constructor(@Inject(DatabaseService) database: DatabaseService) {
+  constructor(
+    @Inject(DatabaseService) database: DatabaseService,
+    @Optional() @Inject(SettingsService) settings?: SettingsService | null,
+  ) {
     this.db = database.connection;
+    this.settings = settings ?? new SettingsService(database);
   }
 
   // ─── Данные конкретного пользователя (JSON-снимок состояния) ───
@@ -248,11 +254,9 @@ export class StateService {
     const notes: Record<string, string> = {};
     for (const row of noteRows) notes[row.date_key] = row.text;
 
-    const setting = (key: string) => {
-      const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
-      return row?.value;
-    };
+    const setting = (key: string) => this.settings.get(key);
 
+    const reminderTime = setting('reminderTime') || DEFAULT_STATE.reminderTime;
     return {
       version: Number(setting('version')) || DEFAULT_STATE.version,
       tasks: habits.map((habit) => ({
@@ -272,8 +276,9 @@ export class StateService {
         priority: task.priority || 'normal',
       })),
       notes,
-      theme: setting('theme') === 'light' || setting('theme') === 'dark' ? setting('theme')! : 'system',
-      reminderTime: setting('reminderTime') || '20:00',
+      theme: setting('theme') === 'light' || setting('theme') === 'dark' ? setting('theme')! : 'dark',
+      reminderTimes: [reminderTime],
+      reminderTime,
       reminderEnabled: setting('reminderEnabled') === '1',
       lastAutoBackupAt: Number(setting('lastAutoBackupAt')) || 0,
     };

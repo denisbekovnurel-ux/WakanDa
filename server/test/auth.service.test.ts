@@ -285,6 +285,57 @@ describe('смена пароля', () => {
   });
 });
 
+describe('защита от перебора пароля', () => {
+  function lockStatus(fn: () => unknown): number | undefined {
+    try {
+      fn();
+    } catch (error) {
+      return (error as { getStatus?: () => number }).getStatus?.();
+    }
+    return undefined;
+  }
+
+  it('после 5 неудач блокирует вход даже с верным паролем', () => {
+    const { auth } = make(tempDir());
+    auth.register('alice', 'secret123');
+
+    for (let i = 0; i < 5; i++) {
+      expect(() => auth.login('alice', 'wrong-pass', '1.2.3.4')).toThrow(UnauthorizedException);
+    }
+    // Шестая попытка — уже не 401, а 429: верный пароль тоже отклоняется.
+    expect(lockStatus(() => auth.login('alice', 'secret123', '1.2.3.4'))).toBe(429);
+  });
+
+  it('блокировка привязана к логину и IP', () => {
+    const { auth } = make(tempDir());
+    auth.register('alice', 'secret123');
+
+    for (let i = 0; i < 5; i++) {
+      expect(() => auth.login('alice', 'wrong-pass', '1.2.3.4')).toThrow(UnauthorizedException);
+    }
+    // Тот же логин с другого IP — не заблокирован.
+    expect(() => auth.login('alice', 'secret123', '9.9.9.9')).not.toThrow();
+    // Другой логин с того же IP — не заблокирован.
+    auth.register('bob', 'secret456');
+    expect(() => auth.login('bob', 'secret456', '1.2.3.4')).not.toThrow();
+  });
+
+  it('успешный вход сбрасывает счётчик неудач', () => {
+    const { auth } = make(tempDir());
+    auth.register('alice', 'secret123');
+
+    for (let i = 0; i < 3; i++) {
+      expect(() => auth.login('alice', 'wrong-pass', '1.2.3.4')).toThrow(UnauthorizedException);
+    }
+    expect(() => auth.login('alice', 'secret123', '1.2.3.4')).not.toThrow();
+    // Счётчик обнулился — снова несколько неудач без блокировки.
+    for (let i = 0; i < 3; i++) {
+      expect(() => auth.login('alice', 'wrong-pass', '1.2.3.4')).toThrow(UnauthorizedException);
+    }
+    expect(() => auth.login('alice', 'secret123', '1.2.3.4')).not.toThrow();
+  });
+});
+
 describe('единственный администратор', () => {
   it('создаётся один одобренный админ и файл с доступом', () => {
     const dir = tempDir();

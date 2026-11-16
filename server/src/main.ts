@@ -30,7 +30,21 @@ function serveFrontend(app: NestExpressApplication) {
   if (process.env.WAKANDA_SERVE_STATIC === '0') return;
   const indexFile = join(DIST_DIR, 'index.html');
   if (!existsSync(indexFile)) return;
-  app.useStaticAssets(DIST_DIR);
+  app.useStaticAssets(DIST_DIR, {
+    // Chrome устанавливает PWA только при корректном MIME манифеста, а
+    // service worker нельзя кэшировать надолго — иначе обновления залипают.
+    setHeaders: (response: { setHeader: (name: string, value: string) => void }, filePath: string) => {
+      if (filePath.endsWith('.webmanifest')) {
+        response.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+        response.setHeader('Cache-Control', 'no-cache');
+      } else if (filePath.endsWith('sw.js')) {
+        response.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        response.setHeader('Service-Worker-Allowed', '/');
+      } else if (filePath.endsWith('index.html')) {
+        response.setHeader('Cache-Control', 'no-cache');
+      }
+    },
+  });
   const express = app.getHttpAdapter().getInstance() as {
     get: (path: RegExp, handler: (request: unknown, response: { sendFile: (file: string) => void }) => void) => void;
   };
@@ -56,6 +70,19 @@ async function bootstrap() {
   app.useGlobalFilters(new AllExceptionsFilter());
   // Security-заголовки ставим первыми — до раздачи статики и API.
   app.use(helmet(buildHelmetOptions(isProduction)));
+  // Permissions-Policy: отключаем ненужные браузерные возможности, чтобы
+  // скомпрометированный скрипт не получил доступ к камере, микрофону и т.п.
+  // Уведомления (web push) этой директивой не затрагиваются.
+  app.use(
+    (_request: { headers: Record<string, unknown> }, response: { setHeader: (name: string, value: string) => void }, next: () => void) => {
+      response.setHeader(
+      'Permissions-Policy',
+      'camera=(), microphone=(), geolocation=(), usb=(), payment=(), browsing-topics=(), ' +
+        'fullscreen=(self), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=()',
+      );
+      next();
+    },
+  );
   app.useBodyParser('json', { limit: BODY_LIMIT });
   app.useBodyParser('urlencoded', { extended: true, limit: BODY_LIMIT });
   // CORS только по явному списку. Без него разрешены лишь same-origin запросы —

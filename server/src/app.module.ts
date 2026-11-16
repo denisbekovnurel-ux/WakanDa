@@ -4,6 +4,7 @@ import { DatabaseModule } from './database/database.module';
 import { StateModule } from './state/state.module';
 import { AuthModule } from './auth/auth.module';
 import { PushModule } from './push/push.module';
+import { RemindersModule } from './reminders/reminders.module';
 import { HealthController } from './health.controller';
 import { ClientErrorsController } from './observability/client-errors.controller';
 
@@ -16,6 +17,7 @@ import { ClientErrorsController } from './observability/client-errors.controller
     StateModule,
     AuthModule,
     PushModule,
+    RemindersModule,
   ],
   controllers: [HealthController, ClientErrorsController],
 })

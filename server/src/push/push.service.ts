@@ -1,8 +1,26 @@
-import { BadRequestException, ConflictException, Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import type Database from 'better-sqlite3';
 import webpush from 'web-push';
 import { DatabaseService } from '../database/database.service';
-import { dueReminderDateKey, normalizeTimezoneOffset, ReminderSettings } from './push.util';
+import { SettingsService } from '../database/settings.service';
+import { RemindersService } from '../reminders/reminders.service';
+import { TelegramService } from '../telegram/telegram.service';
+import {
+  dailyReminderBody,
+  dueOneOffReminders,
+  dueReminderSlots,
+  normalizeTimezoneOffset,
+  ReminderSettings,
+} from './push.util';
+import type { AppState } from '../state/state.schema';
 import { logger } from '../observability/logger';
 
 // Раз в минуту проверяем, у кого наступило время напоминания.
@@ -38,27 +56,43 @@ type SubscriptionRow = {
   timezone_offset: number;
 };
 
-type ReminderRow = { user_id: string; data: string; tz: number | null };
+type ReminderRow = { user_id: string; data: string; tz: number | null; tg_tz: number | null };
 
 @Injectable()
 export class PushService implements OnModuleInit, OnModuleDestroy {
   private readonly db: Database.Database;
+  private readonly settings: SettingsService;
   private timer: NodeJS.Timeout | null = null;
   private pruneTimer: NodeJS.Timeout | null = null;
   private vapidPublic = '';
   private vapidPrivate = '';
   private ready = false;
   private remindersRunning = false;
+  private lastRunAt: string | null = null;
+  private lastSuccessAt: string | null = null;
+  private lastError: string | null = null;
 
-  constructor(@Inject(DatabaseService) database: DatabaseService) {
+  constructor(
+    @Inject(DatabaseService) database: DatabaseService,
+    // Telegram и напоминания необязательны: PushService остаётся работоспособным
+    // и в тестах, и в конфигурации без Telegram-бота.
+    @Optional() @Inject(TelegramService) private readonly telegram: TelegramService | null = null,
+    @Optional() @Inject(RemindersService) private readonly reminders: RemindersService | null = null,
+    @Optional() @Inject(SettingsService) settings?: SettingsService | null,
+  ) {
     this.db = database.connection;
+    this.settings = settings ?? new SettingsService(database);
     this.loadVapidKeys();
   }
 
   onModuleInit() {
-    this.timer = setInterval(() => {
+    const tick = () => {
       this.runReminders().catch((error) => logger.error({ err: error }, 'push reminders failed'));
-    }, CHECK_INTERVAL_MS);
+    };
+    // Не ждём первую минуту после деплоя: если сервер перезапустился ровно
+    // в момент напоминания, отправляем его сразу.
+    tick();
+    this.timer = setInterval(tick, CHECK_INTERVAL_MS);
     this.pruneTimer = setInterval(() => {
       try {
         this.prunePushLog();
@@ -88,6 +122,20 @@ export class PushService implements OnModuleInit, OnModuleDestroy {
     return this.ready ? this.vapidPublic : '';
   }
 
+  /** Диагностика планировщика для /api/health: без секретов и chat_id. */
+  schedulerStatus() {
+    return {
+      pushReady: this.ready,
+      telegramReady: Boolean(this.telegram?.configured),
+      running: this.remindersRunning,
+      lastRunAt: this.lastRunAt,
+      lastSuccessAt: this.lastSuccessAt,
+      // Текст ошибки остаётся в логах: health публичный и не должен отдавать
+      // наружу пути к файлам/SQL. Флаг достаточен для мониторинга.
+      lastError: this.lastError ? 'scheduler error' : null,
+    };
+  }
+
   private hostAllowed(hostname: string): boolean {
     const extra = (process.env.WAKANDA_PUSH_HOSTS || '')
       .split(',')
@@ -99,12 +147,11 @@ export class PushService implements OnModuleInit, OnModuleDestroy {
   }
 
   private readSetting(key: string): string | undefined {
-    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
-    return row?.value;
+    return this.settings.get(key);
   }
 
   private saveSetting(key: string, value: string) {
-    this.db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+    this.settings.set(key, value);
   }
 
   // Ключи VAPID: сначала из окружения, иначе из БД, иначе генерируем и сохраняем.
@@ -288,49 +335,129 @@ export class PushService implements OnModuleInit, OnModuleDestroy {
   // ─── Планировщик напоминаний ───
 
   private async runReminders() {
-    if (!this.ready || this.remindersRunning) return;
+    const telegramReady = Boolean(this.telegram?.configured);
+    // Напоминания нужны и пользователям без Web Push, если у них подключён Telegram.
+    if ((!this.ready && !telegramReady) || this.remindersRunning) return;
     this.remindersRunning = true;
+    this.lastRunAt = new Date().toISOString();
     try {
-      const rows = this.db
-        .prepare(
-          `SELECT u.id AS user_id, us.data AS data,
-             (SELECT timezone_offset FROM push_subscriptions WHERE user_id = u.id ORDER BY id DESC LIMIT 1) AS tz
-           FROM users u
-           JOIN user_state us ON us.user_id = u.id
-           WHERE u.status = 'approved'
-             AND EXISTS (SELECT 1 FROM push_subscriptions WHERE user_id = u.id)`,
-        )
-        .all() as ReminderRow[];
-      if (!rows.length) return;
-      const now = new Date();
-      for (const row of rows) {
-        let settings: ReminderSettings = {};
-        try {
-          settings = JSON.parse(row.data) as ReminderSettings;
-        } catch {
-          continue;
-        }
-        const dateKey = dueReminderDateKey(settings, now, row.tz ?? 0);
-        if (!dateKey) continue;
-        const alreadySent = this.db
-          .prepare('SELECT 1 FROM push_log WHERE user_id = ? AND date_key = ?')
-          .get(row.user_id, dateKey);
-        if (alreadySent) continue;
-        const result = await this.sendToUser(row.user_id, {
-          title: 'WakanDa — время свериться',
-          body: 'Пора отметить привычки за сегодня и закрыть день.',
-          url: '/daily',
-        });
-        // Если не ушло ни одно уведомление (сеть/сервис), не считаем день
-        // закрытым: следующий тик попробует снова в пределах grace-окна.
-        if (result.sent > 0) {
-          this.db
-            .prepare('INSERT OR IGNORE INTO push_log (user_id, date_key, sent_at) VALUES (?, ?, ?)')
-            .run(row.user_id, dateKey, now.toISOString());
-        }
-      }
+      await this.runCustomReminders(telegramReady);
+      await this.runStateReminders(telegramReady);
+      this.lastSuccessAt = new Date().toISOString();
+      this.lastError = null;
+    } catch (error) {
+      this.lastError = error instanceof Error ? error.message : String(error);
+      throw error;
     } finally {
       this.remindersRunning = false;
     }
+  }
+
+  /** Напоминания пользователя на конкретную дату и время (в том числе из Telegram). */
+  private async runCustomReminders(telegramReady: boolean) {
+    if (!this.reminders) return;
+    const now = new Date();
+    const due = this.reminders.due(now);
+    for (const reminder of due) {
+      const pushResult = this.ready
+        ? await this.sendToUser(reminder.userId, {
+            title: 'WakanDa — напоминание',
+            body: reminder.text,
+            url: '/',
+          })
+        : { sent: 0, removed: 0, failed: 0 };
+      const telegramSent = telegramReady
+        ? await this.telegram!.sendToUser(reminder.userId, `WakanDa — напоминание\n${reminder.text}`, {
+            inline_keyboard: [
+              [{ text: '⏰ Отложить на 10 минут', callback_data: `rem:snooze:${reminder.id}` }],
+            ],
+          })
+        : false;
+      // Отмечаем отправленным только после успешной доставки хотя бы в один
+      // канал: при сбое сети следующий тик повторит попытку.
+      if (pushResult.sent > 0 || telegramSent) this.reminders.markSent(reminder.id, now);
+    }
+    this.reminders.prune(now);
+  }
+
+  /** Ежедневные напоминания (до трёх раз в день) и напоминания о разовых задачах. */
+  private async runStateReminders(telegramReady: boolean) {
+    const rows = this.db
+      .prepare(
+        `SELECT u.id AS user_id, us.data AS data,
+           (SELECT timezone_offset FROM push_subscriptions WHERE user_id = u.id ORDER BY id DESC LIMIT 1) AS tz,
+           (SELECT timezone_offset FROM telegram_links WHERE user_id = u.id) AS tg_tz
+         FROM users u
+         JOIN user_state us ON us.user_id = u.id
+         WHERE u.status = 'approved'
+           AND (
+             EXISTS (SELECT 1 FROM push_subscriptions WHERE user_id = u.id)
+             OR EXISTS (SELECT 1 FROM telegram_links WHERE user_id = u.id)
+           )`,
+      )
+      .all() as ReminderRow[];
+    if (!rows.length) return;
+    const now = new Date();
+    for (const row of rows) {
+      let state: AppState;
+      try {
+        state = JSON.parse(row.data) as AppState;
+      } catch {
+        continue;
+      }
+      // Push-подписка знает актуальное смещение точнее, чем сохранённое
+      // при привязке Telegram; для Telegram-only берём его значение.
+      const offset = normalizeTimezoneOffset(row.tz ?? row.tg_tz ?? 0);
+      for (const slot of dueReminderSlots(state as ReminderSettings, now, offset)) {
+        if (this.reminderAlreadySent(row.user_id, slot.dateKey, slot.time)) continue;
+        const body = dailyReminderBody(state, slot.dateKey);
+        const pushResult = this.ready
+          ? await this.sendToUser(row.user_id, {
+              title: 'WakanDa — время свериться',
+              body,
+              url: '/daily',
+            })
+          : { sent: 0, removed: 0, failed: 0 };
+        const telegramSent = telegramReady
+          ? await this.telegram!.sendToUser(row.user_id, `WakanDa — время свериться. ${body}`)
+          : false;
+        // Если не ушло ни одно уведомление (сеть/сервис), не считаем слот
+        // закрытым: следующий тик попробует снова в пределах grace-окна.
+        if (pushResult.sent > 0 || telegramSent) {
+          this.markReminderSent(row.user_id, slot.dateKey, slot.time, now);
+        }
+      }
+
+      for (const due of dueOneOffReminders(state, now, offset)) {
+        if (this.reminderAlreadySent(row.user_id, due.dateKey, due.slot)) continue;
+        const pushResult = this.ready
+          ? await this.sendToUser(row.user_id, {
+              title: 'WakanDa — напоминание о задаче',
+              body: due.title,
+              url: '/oneoff',
+            })
+          : { sent: 0, removed: 0, failed: 0 };
+        const telegramSent = telegramReady
+          ? await this.telegram!.sendToUser(row.user_id, `WakanDa — напоминание о задаче\n${due.title}`)
+          : false;
+        if (pushResult.sent > 0 || telegramSent) {
+          this.markReminderSent(row.user_id, due.dateKey, due.slot, now);
+        }
+      }
+    }
+  }
+
+  private reminderAlreadySent(userId: string, dateKey: string, slot: string): boolean {
+    return Boolean(
+      this.db
+        .prepare('SELECT 1 FROM push_log WHERE user_id = ? AND date_key = ? AND slot = ?')
+        .get(userId, dateKey, slot),
+    );
+  }
+
+  private markReminderSent(userId: string, dateKey: string, slot: string, now: Date): void {
+    this.db
+      .prepare('INSERT OR IGNORE INTO push_log (user_id, date_key, slot, sent_at) VALUES (?, ?, ?, ?)')
+      .run(userId, dateKey, slot, now.toISOString());
   }
 }

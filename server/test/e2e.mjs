@@ -66,6 +66,11 @@ const child = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts'], {
     // детерминированными даже если эти переменные заданы в оболочке.
     WAKANDA_CORS_ORIGINS: '',
     WAKANDA_TRUST_PROXY: '',
+    // Telegram всегда выключен в e2e: проверяем поведение API без бота, а не то,
+    // заданы ли ключи в оболочке разработчика.
+    WAKANDA_TELEGRAM_BOT_TOKEN: '',
+    WAKANDA_TELEGRAM_WEBHOOK_URL: '',
+    WAKANDA_TELEGRAM_WEBHOOK_SECRET: '',
     NODE_ENV: 'test',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -88,6 +93,13 @@ const username = `e2e_${run}`;
 async function main() {
   await waitForServer();
   check('health endpoint responds ok', true);
+
+  const health = await req('/health');
+  check(
+    'health reports live scheduler',
+    health.data?.scheduler?.pushReady === true && typeof health.data?.scheduler?.lastRunAt === 'string',
+    JSON.stringify(health.data?.scheduler),
+  );
 
   const security = await req('/health');
   const csp = security.headers.get('content-security-policy') ?? '';
@@ -144,7 +156,7 @@ async function main() {
     tasks: [{ id: 'h1', title: 'Бег', history: { '2026-10-01': 'done' }, pauseRanges: [{ from: '2026-10-10', to: '2026-10-12' }] }],
     oneOffTasks: [{ id: 'o1', title: 'Позвонить', done: false, priority: 'high', deadline: '2026-10-30' }],
     notes: { '2026-10-01': 'заметка' },
-    theme: 'system',
+    theme: 'dark',
     reminderTime: '20:00',
     reminderEnabled: false,
     lastAutoBackupAt: 0,
@@ -261,6 +273,24 @@ async function main() {
 
   const unsub = await req('/push/unsubscribe', { method: 'POST', token: userToken2, body: { endpoint: 'https://127.0.0.1:1/push' } });
   check('push unsubscribe', unsub.status === 200 || unsub.status === 201, JSON.stringify(unsub.data));
+
+  // Telegram без бота: статус честный, привязка недоступна, а публичный webhook
+  // не принимает команды от того, кто не знает секрета.
+  const telegramStatus = await req('/telegram/status', { token: userToken2 });
+  check(
+    'telegram status reports not configured',
+    telegramStatus.status === 200 && telegramStatus.data?.configured === false && telegramStatus.data?.webhookReady === false,
+    JSON.stringify(telegramStatus.data),
+  );
+
+  const telegramLink = await req('/telegram/link', { method: 'POST', token: userToken2, body: { timezoneOffset: 180 } });
+  check('telegram link rejected while bot is off (400)', telegramLink.status === 400, String(telegramLink.status));
+
+  const telegramUnlink = await req('/telegram/link', { method: 'DELETE', token: userToken2 });
+  check('telegram unlink is harmless without link', (telegramUnlink.status === 200 || telegramUnlink.status === 201) && telegramUnlink.data?.removed === 0, JSON.stringify(telegramUnlink.data));
+
+  const telegramWebhook = await req('/telegram/webhook', { method: 'POST', body: { update_id: 1, message: { text: '/start whatever', chat: { id: 1 } } } });
+  check('telegram webhook rejects missing secret (403)', telegramWebhook.status === 403, String(telegramWebhook.status));
 
   const foreign = await req(`/state/history/${newest?.id}`, { token: adminToken });
   check('foreign snapshot not readable (404)', foreign.status === 404, String(foreign.status));
