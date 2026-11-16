@@ -36,14 +36,15 @@ type AppAction =
   | { type: 'habit/schedule'; id: string; day: number }
   | { type: 'habit/pause'; id: string; from: string; to: string }
   | { type: 'habit/unpause'; id: string; dateKey: string }
-  | { type: 'oneoff/add'; title: string; deadline: string; priority: OneOffPriority; todayKey: string }
+  | { type: 'oneoff/add'; title: string; deadline: string; priority: OneOffPriority; reminderAt?: string; todayKey: string }
   | { type: 'oneoff/toggle'; id: string }
   | { type: 'oneoff/delete'; id: string }
   | { type: 'oneoff/rename'; id: string; title: string }
+  | { type: 'oneoff/reminder'; id: string; reminderAt: string }
   | { type: 'oneoff/move'; id: string; direction: -1 | 1 }
   | { type: 'notes/set'; dateKey: string; text: string }
   | { type: 'settings/theme'; value: Theme }
-  | { type: 'settings/reminderTime'; value: string }
+  | { type: 'settings/reminderTime'; index: number; value: string }
   | { type: 'settings/reminderEnabled'; value: boolean }
   | { type: 'settings/autoBackupAt'; value: number }
   | { type: 'state/adopt' | 'state/replace'; state: unknown };
@@ -114,13 +115,15 @@ function reducer(state: AppState, action: AppAction): AppState {
       };
     }
     case 'oneoff/add':
-      return { ...state, oneOffTasks: [...state.oneOffTasks, { id: crypto.randomUUID(), title: action.title, done: false, createdAt: action.todayKey, deadline: action.deadline, priority: action.priority }] };
+      return { ...state, oneOffTasks: [...state.oneOffTasks, { id: crypto.randomUUID(), title: action.title, done: false, createdAt: action.todayKey, deadline: action.deadline, priority: action.priority, reminderAt: action.reminderAt }] };
     case 'oneoff/toggle':
       return { ...state, oneOffTasks: state.oneOffTasks.map((task) => (task.id === action.id ? { ...task, done: !task.done } : task)) };
     case 'oneoff/delete':
       return { ...state, oneOffTasks: state.oneOffTasks.filter((task) => task.id !== action.id) };
     case 'oneoff/rename':
       return { ...state, oneOffTasks: state.oneOffTasks.map((task) => (task.id === action.id && action.title.trim() ? { ...task, title: action.title.trim() } : task)) };
+    case 'oneoff/reminder':
+      return { ...state, oneOffTasks: state.oneOffTasks.map((task) => (task.id === action.id ? { ...task, reminderAt: action.reminderAt || undefined } : task)) };
     case 'oneoff/move': {
       const activeIds = state.oneOffTasks.filter((task) => !task.done).map((task) => task.id);
       const index = activeIds.indexOf(action.id);
@@ -145,7 +148,7 @@ function reducer(state: AppState, action: AppAction): AppState {
     case 'settings/theme':
       return { ...state, theme: action.value };
     case 'settings/reminderTime':
-      return { ...state, reminderTime: action.value };
+      return { ...state, reminderTimes: state.reminderTimes.map((value, index) => (index === action.index ? action.value : value)) };
     case 'settings/reminderEnabled':
       return { ...state, reminderEnabled: action.value };
     case 'settings/autoBackupAt':
@@ -172,14 +175,15 @@ function useActions(dispatch: Dispatch<AppAction>): AppActions {
     changeHabitSchedule: (id, day) => dispatch({ type: 'habit/schedule', id, day }),
     pauseHabit: (id, from, to) => dispatch({ type: 'habit/pause', id, from, to }),
     unpauseHabit: (id, dateKey) => dispatch({ type: 'habit/unpause', id, dateKey }),
-    addOneOff: (title, options, todayKey) => dispatch({ type: 'oneoff/add', title, deadline: options.deadline, priority: options.priority, todayKey }),
+    addOneOff: (title, options, todayKey) => dispatch({ type: 'oneoff/add', title, deadline: options.deadline, priority: options.priority, reminderAt: options.reminderAt, todayKey }),
     toggleOneOff: (id) => dispatch({ type: 'oneoff/toggle', id }),
     deleteOneOff: (id) => dispatch({ type: 'oneoff/delete', id }),
     renameOneOff: (id, title) => dispatch({ type: 'oneoff/rename', id, title }),
+    setOneOffReminder: (id, reminderAt) => dispatch({ type: 'oneoff/reminder', id, reminderAt }),
     moveOneOff: (id, direction) => dispatch({ type: 'oneoff/move', id, direction }),
     setNote: (dateKey, text) => dispatch({ type: 'notes/set', dateKey, text }),
     setTheme: (value) => dispatch({ type: 'settings/theme', value }),
-    setReminderTime: (value) => dispatch({ type: 'settings/reminderTime', value }),
+    setReminderTime: (index, value) => dispatch({ type: 'settings/reminderTime', index, value }),
     setReminderEnabled: (value) => dispatch({ type: 'settings/reminderEnabled', value }),
     markAutoBackup: (value) => dispatch({ type: 'settings/autoBackupAt', value }),
     replaceState: (next) => dispatch({ type: 'state/replace', state: next }),

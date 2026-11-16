@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { apiChangePassword, apiLogoutEverywhere } from '../api/authApi';
 import { useAuth } from '../auth/AuthContext';
 import { firstError, passwordChangeSchema } from '../validation/schemas';
 import { errorMessage } from '../utils/errors';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useI18n } from '../i18n';
 
 interface DialogNote {
@@ -17,23 +18,13 @@ interface DialogNote {
 export function PasswordChangeDialog({ onClose }: { onClose: () => void }) {
   const { token } = useAuth();
   const { t } = useI18n();
-  const dialogRef = useRef<HTMLDivElement>(null);
+  // Фокус, Escape, Tab-ловушка и блокировка фона — общие для всех диалогов.
+  const dialogRef = useDialogA11y({ onClose });
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
   const [note, setNote] = useState<DialogNote | null>(null);
   const [busy, setBusy] = useState(false);
-
-  // Фокус внутрь диалога и закрытие по Escape — иначе клавиатурный пользователь
-  // остаётся «запертым» за модальным окном.
-  useEffect(() => {
-    dialogRef.current?.focus();
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose();
-    }
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();

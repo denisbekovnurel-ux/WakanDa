@@ -13,7 +13,7 @@ export default function DailyPage() {
   const activeTasks = selectActiveHabits(state);
 
   return (
-    <section className="section-card page-section">
+    <section className="section-card page-section" data-reveal>
       <MonthGrid />
       <NotesPanel />
       <div className="daily-task-manager">

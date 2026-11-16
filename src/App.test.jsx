@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
+import { PwaInstallProvider } from './pwa/PwaInstallProvider';
 
 // Роутер: главная остаётся в основном чанке, остальные разделы — ленивые.
 // Здесь проверяем навигацию и доступ, сами разделы подменены заглушками
@@ -20,7 +21,6 @@ vi.mock('./components/FeedbackContext', () => ({ useFeedback: () => mocks.feedba
 vi.mock('./components/Feedback', () => ({ FeedbackViewport: () => null }));
 vi.mock('./hooks/TodayContext', () => ({ useToday: () => ({ today: new Date(2026, 9, 26, 12), todayKey: '2026-10-26' }) }));
 vi.mock('./hooks/useReminders', () => ({ useReminders: () => ({ enable: vi.fn(async () => true) }) }));
-vi.mock('./hooks/usePrefersDark', () => ({ usePrefersDark: () => false }));
 vi.mock('./utils/push', () => ({ ensurePushSubscription: vi.fn(async () => ({ ok: true })), disablePushSubscription: vi.fn() }));
 vi.mock('./api/pushApi', () => ({ sendTestPush: vi.fn() }));
 vi.mock('./components/BackupControls', () => ({ BackupControls: () => <div data-testid="backup-controls" /> }));
@@ -43,8 +43,8 @@ beforeEach(() => {
       tasks: [],
       oneOffTasks: [],
       notes: {},
-      theme: 'system',
-      reminderTime: '20:00',
+      theme: 'dark',
+      reminderTimes: ['09:00', '14:00', '20:00'],
       reminderEnabled: false,
     },
     actions: { setTheme: vi.fn(), setReminderTime: vi.fn(), setReminderEnabled: vi.fn() },
@@ -58,7 +58,11 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 function renderAt(path) {
-  return render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
+  return render(
+    <PwaInstallProvider>
+      <MemoryRouter initialEntries={[path]}><App /></MemoryRouter>
+    </PwaInstallProvider>
+  );
 }
 
 describe('App routing', () => {
@@ -68,17 +72,17 @@ describe('App routing', () => {
     expect(screen.getByRole('heading', { name: 'Точка старта' })).toBeTruthy();
     expect(screen.getByLabelText('Сводка')).toBeTruthy();
     expect(screen.getByText('ВСЁ ОТМЕЧЕНО')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'HOME 홈' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: 'HOME' }).getAttribute('aria-current')).toBe('page');
   });
 
   it('переходит на ленивый раздел по клику в навигации', async () => {
     renderAt('/');
 
-    fireEvent.click(screen.getByRole('link', { name: 'DAILY 매일' }));
+    fireEvent.click(screen.getByRole('link', { name: 'DAILY' }));
 
     await screen.findByText('daily-page');
     expect(screen.getByRole('heading', { name: 'Ежедневный режим' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'DAILY 매일' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: 'DAILY' }).getAttribute('aria-current')).toBe('page');
     // Индикатор «всё отмечено» — только на главной.
     expect(screen.queryByText('ВСЁ ОТМЕЧЕНО')).toBeNull();
   });
@@ -107,14 +111,14 @@ describe('App routing', () => {
     renderAt('/admin');
 
     await screen.findByText('admin-page');
-    expect(screen.getByRole('link', { name: 'ADMIN 관리자' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'ADMIN' })).toBeTruthy();
   });
 
   it('обычный пользователь не видит ссылку и раздел админа', () => {
     mocks.auth = { ...mocks.auth, user: adminUser({ role: 'user', username: 'ivan' }) };
     renderAt('/admin');
 
-    expect(screen.queryByRole('link', { name: 'ADMIN 관리자' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'ADMIN' })).toBeNull();
     expect(screen.getByText('Раздел доступен только администратору.')).toBeTruthy();
     expect(screen.queryByText('admin-page')).toBeNull();
   });
@@ -140,9 +144,21 @@ describe('App routing', () => {
     document.documentElement.scrollTop = 640;
     renderAt('/');
 
-    fireEvent.click(screen.getByRole('link', { name: 'STATS 통계' }));
+    fireEvent.click(screen.getByRole('link', { name: 'STATS' }));
     await screen.findByText('stats-page');
 
     await waitFor(() => expect(document.documentElement.scrollTop).toBe(0));
+  });
+
+  it('переключает только две темы — тёмную и светлую', () => {
+    renderAt('/');
+    fireEvent.click(screen.getByRole('button', { name: /Тема: тёмная/ }));
+    expect(mocks.store.actions.setTheme).toHaveBeenCalledWith('light');
+
+    cleanup();
+    mocks.store.state.theme = 'light';
+    renderAt('/');
+    fireEvent.click(screen.getByRole('button', { name: /Тема: светлая/ }));
+    expect(mocks.store.actions.setTheme).toHaveBeenCalledWith('dark');
   });
 });

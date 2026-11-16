@@ -4,21 +4,24 @@
 import type { AppState, Habit, HabitStatus, OneOffPriority, OneOffTask, PauseRange, Theme } from '../types';
 import { translate } from '../i18n';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
+
+/** Время по умолчанию для трёх ежедневных напоминаний. */
+export const DEFAULT_REMINDER_TIMES = ['09:00', '14:00', '20:00'] as const;
 
 export const DEFAULT_STATE: AppState = {
   version: SCHEMA_VERSION,
   tasks: [],
   oneOffTasks: [],
   notes: {},
-  theme: 'system',
-  reminderTime: '20:00',
+  theme: 'dark',
+  reminderTimes: [...DEFAULT_REMINDER_TIMES],
   reminderEnabled: false,
   lastAutoBackupAt: 0,
 };
 
 const VALID_STATUSES: ReadonlySet<string> = new Set<HabitStatus>(['done', 'failed', 'empty']);
-const VALID_THEMES: ReadonlySet<string> = new Set<Theme>(['light', 'dark', 'system']);
+const VALID_THEMES: ReadonlySet<string> = new Set<Theme>(['light', 'dark']);
 const VALID_PRIORITIES: ReadonlySet<string> = new Set<OneOffPriority>(['high', 'normal', 'low']);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -27,12 +30,46 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const LOCAL_DATE_TIME_RE = /^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/;
 
 export function isRealDateKey(value: unknown): value is string {
   if (typeof value !== 'string' || !DATE_KEY_RE.test(value)) return false;
   const [year, month, day] = value.split('-').map(Number);
   const date = new Date(year, month - 1, day);
   return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+}
+
+/** Значение из `<input type="datetime-local">`: реальная локальная дата и время. */
+export function isLocalDateTime(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const match = LOCAL_DATE_TIME_RE.exec(value);
+  if (!match) return false;
+  return isRealDateKey(`${match[1]}-${match[2]}-${match[3]}`);
+}
+
+/**
+ * Три ежедневных напоминания. Старые данные хранили одно время в
+ * `reminderTime` — переносим его в первый слот, остальные добираем
+ * значениями по умолчанию.
+ */
+export function normalizeReminderTimes(input: unknown): string[] {
+  const source = isPlainObject(input) ? input : {};
+  const candidates = [
+    ...(Array.isArray(source.reminderTimes) ? source.reminderTimes : []),
+    source.reminderTime,
+  ].filter((value): value is string => typeof value === 'string' && TIME_RE.test(value));
+  const result = [...new Set(candidates)].sort().slice(0, DEFAULT_REMINDER_TIMES.length);
+  for (const fallback of DEFAULT_REMINDER_TIMES) {
+    if (result.length >= DEFAULT_REMINDER_TIMES.length) break;
+    if (!result.includes(fallback)) result.push(fallback);
+  }
+  return result.sort();
+}
+
+function normalizeReminderAt(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.length > 40 || !value.trim()) return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : undefined;
 }
 
 // createdAt в старых данных мог быть ISO-таймстампом. Оставляем только
@@ -101,6 +138,7 @@ export function normalizeOneOff(task: unknown): OneOffTask | null {
     priority: typeof task.priority === 'string' && VALID_PRIORITIES.has(task.priority)
       ? (task.priority as OneOffPriority)
       : 'normal',
+    reminderAt: normalizeReminderAt(task.reminderAt),
   };
 }
 
@@ -140,8 +178,8 @@ export function normalizeState(input: unknown): AppState {
     tasks: uniqueById(Array.isArray(source.tasks) ? source.tasks.map(normalizeHabit).filter((task): task is Habit => task !== null) : []),
     oneOffTasks: uniqueById(Array.isArray(source.oneOffTasks) ? source.oneOffTasks.map(normalizeOneOff).filter((task): task is OneOffTask => task !== null) : []),
     notes: normalizeNotes(source.notes),
-    theme: typeof source.theme === 'string' && VALID_THEMES.has(source.theme) ? (source.theme as Theme) : 'system',
-    reminderTime: typeof source.reminderTime === 'string' && TIME_RE.test(source.reminderTime) ? source.reminderTime : '20:00',
+    theme: typeof source.theme === 'string' && VALID_THEMES.has(source.theme) ? (source.theme as Theme) : 'dark',
+    reminderTimes: normalizeReminderTimes(source),
     reminderEnabled: Boolean(source.reminderEnabled),
     lastAutoBackupAt: Number.isFinite(lastAutoBackupAt) && lastAutoBackupAt > 0 ? lastAutoBackupAt : 0,
   };

@@ -96,6 +96,15 @@ export function StatsPage() {
     };
   }, [monthDays]);
 
+  const trendStats = useMemo(() => {
+    const values = monthDays.flatMap((day) => (day.percent === null ? [] : [day.percent]));
+    if (!values.length) return null;
+    return {
+      peak: Math.round(Math.max(...values) * 100),
+      average: Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100),
+    };
+  }, [monthDays]);
+
   const heatmap = useMemo(() => {
     const todayKey = toDateKey(today);
     const first = new Date(today);
@@ -167,7 +176,7 @@ export function StatsPage() {
   }
 
   return (
-    <section className="section-card page-section stats-page">
+    <section className="section-card page-section stats-page" data-reveal>
       <div className="section-heading">
         <div><p className="eyebrow">{t('ДИСЦИПЛИНА В ЦИФРАХ')}</p><h2>{t('Твоя статистика')}</h2></div>
         <div className="month-controls">
@@ -177,7 +186,7 @@ export function StatsPage() {
         </div>
       </div>
 
-      <div className="stats-summary">
+      <div className="stats-summary" data-reveal>
         <ProgressRing percent={summary.percent} size={112} ariaLabel={t('Выполнено за {month}', { month: monthLabel })} />
         <div className="stats-summary-main">
           <p className="stats-summary-label">{t('Выполнено за {month}', { month: monthLabel })}</p>
@@ -209,7 +218,11 @@ export function StatsPage() {
         {trend.area && <polygon className="stats-trend-area" points={trend.area} />}
         {trend.line && <polyline className="stats-trend-line" points={trend.line} vectorEffect="non-scaling-stroke" />}
       </svg>
-      <p className="stats-trend-caption" style={{ display: 'none' }} />
+      <p className="stats-trend-caption">
+        {trendStats
+          ? t('Пик {peak}% · в среднем {average}% за месяц', { peak: trendStats.peak, average: trendStats.average })
+          : t('Нет данных для графика.')}
+      </p>
 
       <h3 className="stats-subtitle">{t('Карта года')}</h3>
       <div className="heatmap-block">

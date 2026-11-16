@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { FeedbackContext, useFeedback } from './FeedbackContext';
 import { TIMINGS } from '../config/timings';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useI18n } from '../i18n';
 import type { DialogOptions, FeedbackContextValue, NotifyOptions, Toast, ToastTone } from '../types';
 
@@ -99,11 +100,15 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
 
 function ToastBlock({ toast, onClose }: { toast: Toast; onClose: (id: number) => void }) {
   const { t } = useI18n();
+  const icons: Record<ToastTone, string> = { info: 'i', success: '✓', warning: '!', error: '!' };
   return (
     <div className={`feedback-toast feedback-toast--${toast.tone}`} role={toast.tone === 'error' ? 'alert' : 'status'}>
+      <span className="toast-icon" aria-hidden="true">{icons[toast.tone]}</span>
+      <div className="feedback-toast-body">
+        {toast.title && <p className="feedback-toast-title">{t(toast.title)}</p>}
+        <p className="feedback-toast-text">{t(toast.text)}</p>
+      </div>
       <button type="button" className="feedback-toast-close" onClick={() => onClose(toast.id)} aria-label={t('Закрыть уведомление')}>×</button>
-      {toast.title && <p className="feedback-toast-title">{t(toast.title)}</p>}
-      <p className="feedback-toast-text">{t(toast.text)}</p>
     </div>
   );
 }
@@ -111,33 +116,15 @@ function ToastBlock({ toast, onClose }: { toast: Toast; onClose: (id: number) =>
 function FeedbackDialog({ dialog, onFinish }: { dialog: DialogOptions; onFinish: (result: unknown) => void }) {
   const { t } = useI18n();
   const [value, setValue] = useState(dialog.value ?? '');
-  const inputRef = useRef<HTMLInputElement>(null);
-  const confirmRef = useRef<HTMLButtonElement>(null);
   const isPrompt = dialog.kind === 'prompt';
-
-  useEffect(() => {
-    const previous = document.activeElement;
-    const target = isPrompt ? inputRef.current : confirmRef.current;
-    target?.focus();
-    return () => {
-      if (previous instanceof HTMLElement) previous.focus();
-    };
-  }, [isPrompt]);
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onFinish(isPrompt ? null : false);
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPrompt, onFinish]);
 
   function cancel() {
     onFinish(isPrompt ? null : false);
   }
+
+  // Фокус, Escape, Tab и блокировка фона — в общем хуке диалогов.
+  // data-autofocus на поле/кнопке задаёт правильную стартовую точку.
+  const dialogRef = useDialogA11y({ onEscape: cancel });
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -148,7 +135,16 @@ function FeedbackDialog({ dialog, onFinish }: { dialog: DialogOptions; onFinish:
 
   return (
     <div className="sync-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) cancel(); }}>
-      <div className="sync-dialog feedback-dialog" role="dialog" aria-modal="true" aria-labelledby="feedback-dialog-title" aria-describedby="feedback-dialog-message">
+      <div
+        className="sync-dialog feedback-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="feedback-dialog-title"
+        aria-describedby={dialog.message ? 'feedback-dialog-message' : undefined}
+        ref={dialogRef}
+        tabIndex={-1}
+        style={{ outline: 'none' }}
+      >
         <p className="eyebrow">{isPrompt ? t('ВВОД ДАННЫХ') : t('ПОДТВЕРЖДЕНИЕ')}</p>
         <h2 id="feedback-dialog-title">{t(dialog.title)}</h2>
         {dialog.message && <p id="feedback-dialog-message" className="section-description feedback-dialog-message">{t(dialog.message)}</p>}
@@ -157,7 +153,7 @@ function FeedbackDialog({ dialog, onFinish }: { dialog: DialogOptions; onFinish:
             <label className="feedback-dialog-field">
               <span>{t(dialog.inputLabel || 'Значение')}</span>
               <input
-                ref={inputRef}
+                data-autofocus
                 type={dialog.inputType || 'text'}
                 value={value}
                 minLength={dialog.minLength}
@@ -174,7 +170,7 @@ function FeedbackDialog({ dialog, onFinish }: { dialog: DialogOptions; onFinish:
         ) : (
           <div className="feedback-dialog-actions">
             <button type="button" className="button button--light" onClick={cancel}>{t(dialog.cancelText || 'Отмена')}</button>
-            <button ref={confirmRef} type="button" className="button button--red" onClick={() => onFinish(true)}>{t(dialog.confirmText || 'Подтвердить')}</button>
+            <button data-autofocus type="button" className="button button--red" onClick={() => onFinish(true)}>{t(dialog.confirmText || 'Подтвердить')}</button>
           </div>
         )}
       </div>

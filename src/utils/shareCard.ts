@@ -75,7 +75,7 @@ export function createProgressCard({ monthLabel, percent, done, expected, days =
   ctx.fillText('WakanDa', 108, 76);
   ctx.fillStyle = '#a393bd';
   ctx.font = '600 26px "DM Sans", sans-serif';
-  ctx.fillText(translate('와칸다 · дисциплина в цифрах'), 110, 130);
+  ctx.fillText(translate('WakanDa · дисциплина в цифрах'), 110, 130);
 
   // Месяц
   ctx.textAlign = 'right';

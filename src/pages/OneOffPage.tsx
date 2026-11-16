@@ -9,7 +9,7 @@ export default function OneOffPage() {
   const openCount = state.oneOffTasks.filter((task) => !task.done).length;
 
   return (
-    <section className="section-card page-section">
+    <section className="section-card page-section" data-reveal>
       <div className="section-heading">
         <div><p className="eyebrow">{t('ОДИН РАЗ — НО ДО КОНЦА')}</p><h2>{t('Список действий')}</h2></div>
         <span className="section-count">{t('{count} открыто', { count: openCount })}</span>

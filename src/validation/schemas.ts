@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isRealDateKey } from '../utils/schema';
+import { isLocalDateTime, isRealDateKey } from '../utils/schema';
 import { translate } from '../i18n';
 
 /**
@@ -71,6 +71,15 @@ export const oneOffFormSchema = z.object({
     message: 'Срок должен быть реальной датой.',
   }),
   priority: z.enum(['high', 'normal', 'low']),
+  reminderAt: z.string().refine((value) => value === '' || isLocalDateTime(value), {
+    message: 'Время напоминания должно быть реальной датой и временем.',
+  }).optional().default(''),
+});
+
+export const oneOffReminderSchema = z.object({
+  reminderAt: z.string().refine((value) => value === '' || isLocalDateTime(value), {
+    message: 'Время напоминания должно быть реальной датой и временем.',
+  }),
 });
 
 interface ValidationResultLike {

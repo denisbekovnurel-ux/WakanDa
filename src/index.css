@@ -1,4 +1,4 @@
-html { min-width: 320px; scroll-behavior: smooth; }
-body { min-width: 320px; }
-#root { min-height: 100vh; }
+html { min-width: 320px; scroll-behavior: smooth; height: 100%; }
+body { min-width: 320px; min-height: 100vh; min-height: 100dvh; }
+#root { min-height: 100vh; min-height: 100dvh; }
 ::selection { color: #fff; background: #548463; }

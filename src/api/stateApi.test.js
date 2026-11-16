@@ -86,8 +86,8 @@ describe('isEmptyAppState', () => {
     tasks: [],
     oneOffTasks: [],
     notes: {},
-    theme: 'system',
-    reminderTime: '20:00',
+    theme: 'dark',
+    reminderTimes: ['09:00', '14:00', '20:00'],
     reminderEnabled: false,
     lastAutoBackupAt: 0,
   };
@@ -97,9 +97,9 @@ describe('isEmptyAppState', () => {
   });
 
   it('настройки без данных — не «пусто», их нельзя затирать', () => {
-    expect(isEmptyAppState({ ...defaults, theme: 'dark' })).toBe(false);
+    expect(isEmptyAppState({ ...defaults, theme: 'light' })).toBe(false);
     expect(isEmptyAppState({ ...defaults, reminderEnabled: true })).toBe(false);
-    expect(isEmptyAppState({ ...defaults, reminderTime: '08:30' })).toBe(false);
+    expect(isEmptyAppState({ ...defaults, reminderTimes: ['08:30', '14:00', '20:00'] })).toBe(false);
   });
 
   it('наличие любой записи делает состояние непустым', () => {

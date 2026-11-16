@@ -6,8 +6,8 @@ describe('normalizeState', () => {
     const state = normalizeState(null);
     expect(state.tasks).toEqual([]);
     expect(state.oneOffTasks).toEqual([]);
-    expect(state.theme).toBe('system');
-    expect(state.reminderTime).toBe('20:00');
+    expect(state.theme).toBe('dark');
+    expect(state.reminderTimes).toEqual(['09:00', '14:00', '20:00']);
   });
 
   it('отбрасывает битые записи и чинит поля', () => {
@@ -23,7 +23,11 @@ describe('normalizeState', () => {
     expect(state.oneOffTasks).toHaveLength(1);
     expect(state.oneOffTasks[0].priority).toBe('normal');
     expect(state.notes).toEqual({ '2026-10-01': 'текст' });
-    expect(state.theme).toBe('system');
+    expect(state.theme).toBe('dark');
+  });
+
+  it('переводит устаревшую системную тему в тёмную', () => {
+    expect(normalizeState({ theme: 'system' }).theme).toBe('dark');
   });
 
   it('нормализует периоды паузы привычки', () => {
@@ -88,7 +92,7 @@ describe('normalizeState', () => {
 
   it('чинит битое время напоминания и lastAutoBackupAt', () => {
     const state = normalizeState({ reminderTime: '25:99', lastAutoBackupAt: 'не число' });
-    expect(state.reminderTime).toBe('20:00');
+    expect(state.reminderTimes).toEqual(['09:00', '14:00', '20:00']);
     expect(state.lastAutoBackupAt).toBe(0);
   });
 });

@@ -17,6 +17,7 @@ export function AuthScreen() {
   const [form, setForm] = useState({ username: '', password: '', confirm: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   function update(field: AuthField, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -91,26 +92,46 @@ export function AuthScreen() {
           </label>
           <label>
             <span>{t('Пароль')}</span>
-            <input
-              type="password"
-              value={form.password}
-              onChange={(event) => update('password', event.target.value)}
-              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-              placeholder="••••••"
-              maxLength={200}
-            />
+            <span className="auth-field">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={form.password}
+                onChange={(event) => update('password', event.target.value)}
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                placeholder="••••••"
+                maxLength={200}
+              />
+              <button
+                type="button"
+                className="auth-field-toggle"
+                aria-label={showPassword ? t('Скрыть пароль') : t('Показать пароль')}
+                title={showPassword ? t('Скрыть пароль') : t('Показать пароль')}
+                aria-pressed={showPassword}
+                onClick={() => setShowPassword((visible) => !visible)}
+              ><span aria-hidden="true">{showPassword ? '🙈' : '👁'}</span></button>
+            </span>
           </label>
           {mode === 'register' && (
             <label>
               <span>{t('Повтор пароля')}</span>
-              <input
-                type="password"
-                value={form.confirm}
-                onChange={(event) => update('confirm', event.target.value)}
-                autoComplete="new-password"
-                placeholder="••••••"
-                maxLength={200}
-              />
+              <span className="auth-field">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={form.confirm}
+                  onChange={(event) => update('confirm', event.target.value)}
+                  autoComplete="new-password"
+                  placeholder="••••••"
+                  maxLength={200}
+                />
+                <button
+                  type="button"
+                  className="auth-field-toggle"
+                  aria-label={showPassword ? t('Скрыть пароль') : t('Показать пароль')}
+                  title={showPassword ? t('Скрыть пароль') : t('Показать пароль')}
+                  aria-pressed={showPassword}
+                  onClick={() => setShowPassword((visible) => !visible)}
+                ><span aria-hidden="true">{showPassword ? '🙈' : '👁'}</span></button>
+              </span>
             </label>
           )}
 
@@ -127,7 +148,7 @@ export function AuthScreen() {
             : t('Нет аккаунта? Выберите «Регистрация».')}
         </p>
       </div>
-      <p className="auth-footer">WAKANDA 와칸다 <span aria-hidden="true">✳</span></p>
+      <p className="auth-footer">WAKANDA <span aria-hidden="true">✳</span></p>
     </div>
   );
 }

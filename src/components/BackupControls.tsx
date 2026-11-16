@@ -29,7 +29,7 @@ export function BackupControls() {
       oneOffTasks: state.oneOffTasks,
       notes: state.notes,
       theme: state.theme,
-      reminderTime: state.reminderTime,
+      reminderTimes: state.reminderTimes,
       reminderEnabled: state.reminderEnabled,
     };
     return { format: 'wakanda-backup', version: 2, exportedAt: new Date().toISOString(), data };

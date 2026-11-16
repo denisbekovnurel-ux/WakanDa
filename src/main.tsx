@@ -5,9 +5,11 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AuthProvider } from "./auth/AuthContext";
 import { AuthGate } from "./components/Auth/AuthGate";
 import { FeedbackProvider } from "./components/Feedback";
+import { PwaInstallProvider } from "./pwa/PwaInstallProvider";
 import { TodayProvider } from "./hooks/TodayProvider";
 import { migrateLegacyHash } from "./router/legacyHash";
 import { installGlobalErrorReporting, reportClientError } from "./utils/reportClientError";
+import { installViewportTracking } from "./utils/viewport";
 
 // Старые ссылки вида `/#daily` до старта роутера переводим в `/daily`,
 // чтобы закладки и уведомления, отправленные до перехода, не открывали главную.
@@ -15,19 +17,23 @@ const legacyTarget = migrateLegacyHash(window.location);
 if (legacyTarget) window.history.replaceState(null, "", legacyTarget);
 
 installGlobalErrorReporting();
+// iOS Safari: держим --vvh и класс keyboard-open в актуальном состоянии.
+installViewportTracking();
 
 createRoot(document.getElementById("root")!).render(
   // ErrorBoundary — снаружи всех провайдеров: падение любого из них должно
   // показывать экран восстановления, а не пустую страницу.
   <ErrorBoundary>
     <FeedbackProvider>
-      <TodayProvider>
-        <BrowserRouter>
-          <AuthProvider>
-            <AuthGate />
-          </AuthProvider>
-        </BrowserRouter>
-      </TodayProvider>
+      <PwaInstallProvider>
+        <TodayProvider>
+          <BrowserRouter>
+            <AuthProvider>
+              <AuthGate />
+            </AuthProvider>
+          </BrowserRouter>
+        </TodayProvider>
+      </PwaInstallProvider>
     </FeedbackProvider>
   </ErrorBoundary>
 );

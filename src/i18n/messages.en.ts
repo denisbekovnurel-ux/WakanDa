@@ -49,6 +49,18 @@ export const EN: Record<string, string> = {
   'пока нет данных': 'no data yet',
   'Показать': 'Show',
   'Скрыть': 'Hide',
+  'Показать пароль': 'Show password',
+  'Скрыть пароль': 'Hide password',
+  'Перейти к содержимому': 'Skip to content',
+  'Подключение…': 'Connecting…',
+  'Сохранено': 'Saved',
+  'Офлайн-кэш': 'Offline cache',
+  'Статус синхронизации: {status}': 'Sync status: {status}',
+  'Открыть меню аккаунта': 'Open account menu',
+  'Меню аккаунта': 'Account menu',
+  'Прогресс дня': 'Daily progress',
+  'ПРОГРЕСС ДНЯ': 'DAILY PROGRESS',
+  '{done} из {total}': '{done} of {total}',
 
   // Общие подписи
   'Выполнено сегодня': 'Completed today',
@@ -134,6 +146,11 @@ export const EN: Record<string, string> = {
   'ДЕНЬ ЗА ДНЁМ': 'DAY BY DAY',
   'Открыть месяц': 'Open month',
   'Добавь привычку и начни собирать свою серию.': 'Add a habit and start building your streak.',
+  'Здесь появится твой первый шаг.': 'Your first step will appear here.',
+  'Снять отметку с «{title}»': 'Clear check-in for “{title}”',
+  'Отметить «{title}» выполненной': 'Mark “{title}” complete',
+  'сделано': 'done',
+  'сегодня': 'today',
   'И ещё {count} привычек': '{count} more habits',
   'НЕ ЖДИ ИДЕАЛЬНОГО МОМЕНТА': 'DO NOT WAIT FOR THE PERFECT MOMENT',
   'Выбери дело.': 'Choose a task.',
@@ -155,12 +172,11 @@ export const EN: Record<string, string> = {
   'Выдержка создаёт результат.': 'Consistency creates results.',
   'ОСТАЛОСЬ ОТМЕТИТЬ {count}': 'TO CHECK IN: {count}',
   'ВСЁ ОТМЕЧЕНО': 'ALL CHECKED IN',
-  'как в системе': 'system',
   'светлая': 'light',
   'тёмная': 'dark',
   'Тема: {current}. Переключить на «{next}»': 'Theme: {current}. Switch to “{next}”',
   'Тема: {current}': 'Theme: {current}',
-  'WakanDa 와칸다 — на главную': 'WakanDa 와칸다 — go home',
+  'WakanDa — на главную': 'WakanDa — go home',
 
   // Авторизация
   'Дисциплина и привычки. Доступ по одобрению.': 'Discipline and habits. Access by approval.',
@@ -401,6 +417,8 @@ export const EN: Record<string, string> = {
   'Поделиться карточкой': 'Share card',
   'Доля выполненных привычек по дням: {month}': 'Share of completed habits by day: {month}',
   'Динамика выполнения за {month}': 'Completion trend for {month}',
+  'Пик {peak}% · в среднем {average}% за месяц': 'Peak {peak}% · {average}% average for the month',
+  'Нет данных для графика.': 'No data for the chart.',
   'Карта года': 'Year map',
   'Тепловая карта выполнений за последний год': 'Completion heatmap for the last year',
   'меньше': 'less',
@@ -434,7 +452,7 @@ export const EN: Record<string, string> = {
 
   // Карточка прогресса
   'Canvas недоступен': 'Canvas is unavailable',
-  '와칸다 · дисциплина в цифрах': '와칸다 · discipline in numbers',
+  'WakanDa · дисциплина в цифрах': 'WakanDa · discipline in numbers',
   'выполнено {done} из {expected}': '{done} of {expected} completed',
   'серия {count} дн.': 'streak {count} d',
   'WakanDa · привычки': 'WakanDa · habits',
@@ -586,4 +604,99 @@ export const EN: Record<string, string> = {
   'Данные уже изменились на другом устройстве': 'The data has already changed on another device',
   'Некорректный номер снимка': 'Invalid snapshot number',
   'Снимок не найден': 'Snapshot not found',
+
+  // Telegram
+  'Подключить Telegram': 'Connect Telegram',
+  'Telegram подключён': 'Telegram connected',
+  'Открыть чат и нажать Start': 'Open the chat and press Start',
+  'Код привязки': 'Link code',
+  'Отключить Telegram': 'Disconnect Telegram',
+  'Проверить сообщение': 'Send a test message',
+  'Напоминания можно получать в Telegram — тогда не нужно устанавливать приложение и разрешать уведомления браузера.':
+    'You can get reminders in Telegram instead — no need to install the app or allow browser notifications.',
+  'Сервер пока не получает ответы бота. Привязка заработает после настройки вебхука или опроса Telegram.':
+    'The server is not receiving bot messages yet. Linking works once the webhook or Telegram polling is configured.',
+  'Ссылка устарела. Создайте новую.': 'The link has expired. Create a new one.',
+  'Telegram подключён — напоминания будут приходить в чат.': 'Telegram connected — reminders will arrive in the chat.',
+  'Проверь Telegram — туда ушло тестовое сообщение.': 'Check Telegram — a test message was sent there.',
+  'Отключить Telegram?': 'Disconnect Telegram?',
+  'Напоминания перестанут приходить в чат. Подключить можно снова в любой момент.':
+    'Reminders will stop arriving in the chat. You can reconnect at any time.',
+  'Telegram отключён.': 'Telegram disconnected.',
+  'Не удалось получить состояние Telegram': 'Could not load the Telegram status',
+  'Не удалось получить ссылку для подключения': 'Could not get the link for connecting',
+  'Не удалось отправить тестовое сообщение': 'Could not send the test message',
+  'Не удалось отключить Telegram': 'Could not disconnect Telegram',
+  'Telegram-уведомления доступны после одобрения администратором': 'Telegram notifications are available after the administrator approves you',
+  'Telegram-бот не настроен на сервере': 'The Telegram bot is not configured on the server',
+  'Сначала подключи Telegram': 'Connect Telegram first',
+  'Не удалось отправить сообщение в Telegram': 'Could not send the message to Telegram',
+  'Telegram webhook не настроен': 'The Telegram webhook is not configured',
+  'Неверный секрет Telegram webhook': 'Invalid Telegram webhook secret',
+
+  // Reminders
+  'ТОЧНАЯ ДАТА И ВРЕМЯ': 'EXACT DATE AND TIME',
+  'Мои напоминания': 'My reminders',
+  'Активных: {count}': 'Active: {count}',
+  'Напоминания приходят до трёх раз в день — выбери удобное время. С включёнными push-уведомлениями сервер пришлёт их, даже когда вкладка закрыта.':
+    'Reminders arrive up to three times a day — choose convenient times. With push notifications enabled, the server sends them even when the tab is closed.',
+  'Время {n}': 'Time {n}',
+  'Напомнить': 'Remind',
+  'Новое время напоминания': 'New reminder time',
+  'Напомнить о задаче «{title}»': 'Set a reminder for “{title}”',
+  'Изменить напоминание для «{title}»': 'Change the reminder for “{title}”',
+  'Убрать': 'Remove',
+  'Это время уже прошло — выбери будущее.': 'That time has already passed — choose a future one.',
+  'Время напоминания уже прошло — выбери будущее.': 'The reminder time has already passed — choose a future one.',
+  'WakanDa — напоминание о задаче': 'WakanDa — task reminder',
+  'Добавь напоминание на конкретную дату. В Telegram можно написать: «Напомни мне позвонить маме 01.10 в 21:00».':
+    'Add a reminder for a specific date. In Telegram you can write: “Remind me to call mom on 01.10 at 21:00”.',
+  'Что напомнить': 'What to remind about',
+  'Например: позвонить маме': 'For example: call mom',
+  'Дата': 'Date',
+  'Время': 'Time',
+  'Напиши, о чём напомнить.': 'Write what to remind you about.',
+  'Выбери дату и время напоминания.': 'Choose the reminder date and time.',
+  'Напоминание добавлено.': 'Reminder added.',
+  'Не удалось создать напоминание.': 'Could not create the reminder.',
+  'Удалить напоминание?': 'Delete the reminder?',
+  'Напоминание удалено.': 'Reminder deleted.',
+  'Не удалось удалить напоминание.': 'Could not delete the reminder.',
+  'Пока пусто. Добавь первое напоминание.': 'Nothing here yet. Add your first reminder.',
+  'Удалить напоминание «{title}»': 'Delete the reminder “{title}”',
+  'Не удалось получить напоминания': 'Could not load reminders',
+  'Не удалось создать напоминание': 'Could not create the reminder',
+  'Не удалось удалить напоминание': 'Could not delete the reminder',
+  'Напоминания доступны после одобрения администратором': 'Reminders are available after the administrator approves you',
+
+  // PWA install
+  'ПРИЛОЖЕНИЕ': 'APP',
+  'Установить приложение': 'Install app',
+  'Установить': 'Install',
+  'Позже': 'Later',
+  'Скрыть предложение установки': 'Hide install suggestion',
+  'WakanDa на этом устройстве': 'WakanDa on this device',
+  'Открывается как приложение — без адресной строки.': 'Opens like an app — no address bar.',
+  'Добавьте WakanDa на ноутбук или телефон — приложение откроется в отдельном окне, без адресной строки.':
+    'Add WakanDa to your laptop or phone — it opens in its own window, without an address bar.',
+  'На iPhone и iPad: Safari → «Поделиться» → «На экран „Домой“».':
+    'On iPhone and iPad: Safari → Share → Add to Home Screen.',
+  'В Chrome на Android: меню ⋮ → «Установить приложение».':
+    'In Chrome on Android: menu ⋮ → Install app.',
+  'В Chrome на компьютере: значок установки в адресной строке или меню ⋮ → «Установить приложение».':
+    'In Chrome on desktop: use the install icon in the address bar or menu ⋮ → Install app.',
+  'Откройте сайт в Chrome, чтобы установить приложение.': 'Open the site in Chrome to install the app.',
+  'Установка доступна только по HTTPS. Откройте сайт по защищённому адресу.':
+    'Installation requires HTTPS. Open the site through a secure address.',
+  'WakanDa установлен': 'WakanDa is installed',
+  'Откройте WakanDa с рабочего стола или с экрана «Домой».': 'Open WakanDa from your desktop or Home screen.',
+  'Установлено': 'Installed',
+  'WakanDa установлен. Откройте его с рабочего стола или экрана «Домой».':
+    'WakanDa is installed. Open it from your desktop or Home screen.',
+  'Не удалось открыть установку. В Chrome откройте меню ⋮ → «Установить приложение».':
+    'Could not open the install dialog. In Chrome, open the ⋮ menu → Install app.',
+  'На iPhone и iPad установка доступна в Safari: «Поделиться» → «На экран „Домой“».':
+    'On iPhone and iPad, install from Safari: Share → Add to Home Screen.',
+  'В Chrome откройте меню ⋮ и выберите «Установить приложение» или «Добавить на главный экран».':
+    'In Chrome, open the ⋮ menu and choose Install app or Add to Home screen.',
 };

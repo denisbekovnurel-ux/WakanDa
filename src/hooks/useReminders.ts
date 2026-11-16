@@ -3,8 +3,13 @@ import { pluralize } from '../utils/pluralize';
 import { useFeedback } from '../components/FeedbackContext';
 import { useAuth } from '../auth/AuthContext';
 import { translate } from '../i18n';
+import type { OneOffTask } from '../types';
 
 const PERIODIC_SYNC_TAG = 'wakanda-daily-reminder';
+// Как и сервер, догоняем пропущенное напоминание в пределах трёх часов.
+const DAILY_GRACE_MS = 3 * 60 * 60 * 1000;
+// Напоминание о разовой задаче полезно и спустя сутки: задача всё ещё не закрыта.
+const ONE_OFF_GRACE_MS = 24 * 60 * 60 * 1000;
 
 interface PeriodicSyncManager {
   register: (tag: string, options?: { minInterval: number }) => Promise<void>;
@@ -16,7 +21,8 @@ type PeriodicSyncRegistration = ServiceWorkerRegistration & {
 
 export interface ReminderSettings {
   enabled: boolean;
-  reminderTime: string;
+  reminderTimes: string[];
+  oneOffTasks: OneOffTask[];
   pendingHabits: number;
   todayKey: string;
 }
@@ -29,8 +35,17 @@ async function getActiveServiceWorker(): Promise<ServiceWorkerRegistration | nul
   return navigator.serviceWorker.ready;
 }
 
-async function showLocalReminder(message: string): Promise<boolean> {
-  const title = translate('WakanDa — время свериться');
+async function hasPushSubscription(): Promise<boolean> {
+  try {
+    const registration = await getActiveServiceWorker();
+    return Boolean(registration?.pushManager && (await registration.pushManager.getSubscription()));
+  } catch {
+    // не смогли проверить — лучше показать локальное уведомление, чем промолчать
+    return false;
+  }
+}
+
+async function showLocalReminder(message: string, title = translate('WakanDa — время свериться')): Promise<boolean> {
   try {
     const registration = await getActiveServiceWorker();
     if (registration) {
@@ -50,6 +65,22 @@ async function showLocalReminder(message: string): Promise<boolean> {
   }
 }
 
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) !== null;
+  } catch {
+    return false;
+  }
+}
+
+function writeFlag(key: string): void {
+  try {
+    localStorage.setItem(key, '1');
+  } catch {
+    // приватный режим: на время сессии просто не повторимся чаще интервала
+  }
+}
+
 async function registerPeriodicSync(): Promise<void> {
   try {
     if (!('serviceWorker' in navigator) || !('Notification' in window)) return;
@@ -66,54 +97,48 @@ async function registerPeriodicSync(): Promise<void> {
 }
 
 /**
- * Единственное место, где живёт логика напоминаний.
+ * Единственное место, где живёт локальная логика напоминаний.
  * Честно: без фоновой синхронизации уведомление приходит, только пока сайт открыт.
  */
-export function useReminders({ enabled, reminderTime, pendingHabits, todayKey }: ReminderSettings) {
+export function useReminders({ enabled, reminderTimes, oneOffTasks, pendingHabits, todayKey }: ReminderSettings) {
   const { notify } = useFeedback();
   const { user } = useAuth();
   const userId = user?.id ?? 'anon';
+  const timesKey = reminderTimes.join(',');
 
   useEffect(() => {
     if (!enabled) return undefined;
-    const lastReminderKey = `wakanda-last-reminder:${userId}:${todayKey}:${reminderTime}`;
+    const times = timesKey.split(',').filter(Boolean);
 
     async function checkReminder() {
       if (pendingHabits === 0 || !('Notification' in window) || Notification.permission !== 'granted') return;
       // Фоновая вкладка не должна дёргать уведомление в момент возврата.
       if (document.visibilityState === 'hidden') return;
-      const [hours, minutes] = String(reminderTime || '').split(':').map(Number);
-      if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return;
       const now = new Date();
-      const due = new Date(now);
-      due.setHours(hours, minutes, 0, 0);
-      // Срабатывает, как только время наступило, и лишь один раз за день.
-      if (now < due) return;
-      try {
-        if (localStorage.getItem(lastReminderKey) === todayKey) return;
-      } catch {
-        // localStorage недоступен — перестрахуемся и не шлём повторно чаще 15 секунд
-      }
+      // Проверяем каждый слот отдельно. Напоминание, которое уже ушло, не
+      // повторяем: ключ в localStorage привязан ко времени и дате.
+      const due = times.filter((time) => {
+        const [hours, minutes] = String(time).split(':').map(Number);
+        if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return false;
+        const target = new Date(now);
+        target.setHours(hours, minutes, 0, 0);
+        const diff = now.getTime() - target.getTime();
+        return diff >= 0 && diff <= DAILY_GRACE_MS;
+      });
+      if (!due.length) return;
 
-      // Если активен серверный push, напоминание уже уйдёт с бэкенда (даже при
-      // закрытой вкладке) — локальное только дублировало бы его.
-      try {
-        const registration = await getActiveServiceWorker();
-        if (registration?.pushManager && (await registration.pushManager.getSubscription())) return;
-      } catch {
-        // не смогли проверить — показываем локальное уведомление
-      }
+      // Если активен серверный push, напоминания уже уйдут с бэкенда (даже при
+      // закрытой вкладке) — локальные только дублировали бы их.
+      if (await hasPushSubscription()) return;
 
       const message = translate('Осталось отметить {count} {unit}.', {
         count: pendingHabits,
         unit: pluralize(pendingHabits, 'привычку', 'привычки', 'привычек'),
       });
-      if (await showLocalReminder(message)) {
-        try {
-          localStorage.setItem(lastReminderKey, todayKey);
-        } catch {
-          // приватный режим: на время сессии просто не повторимся чаще интервала
-        }
+      for (const time of due) {
+        const key = `wakanda-last-reminder:${userId}:${todayKey}:${time}`;
+        if (readFlag(key)) continue;
+        if (await showLocalReminder(message)) writeFlag(key);
       }
     }
 
@@ -126,7 +151,38 @@ export function useReminders({ enabled, reminderTime, pendingHabits, todayKey }:
       document.removeEventListener('visibilitychange', checkReminder);
       window.removeEventListener('focus', checkReminder);
     };
-  }, [enabled, reminderTime, pendingHabits, todayKey, userId]);
+  }, [enabled, timesKey, pendingHabits, todayKey, userId]);
+
+  // Напоминания о разовых задачах не зависят от ежедневного переключателя:
+  // если пользователь выбрал время для задачи, он ждёт уведомление.
+  useEffect(() => {
+    const scheduled = oneOffTasks.filter((task) => !task.done && task.reminderAt);
+    if (!scheduled.length) return undefined;
+
+    async function checkOneOff() {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      if (document.visibilityState === 'hidden') return;
+      if (await hasPushSubscription()) return;
+      const now = Date.now();
+      for (const task of scheduled) {
+        const at = task.reminderAt ? Date.parse(task.reminderAt) : Number.NaN;
+        if (!Number.isFinite(at) || at > now || now - at > ONE_OFF_GRACE_MS) continue;
+        const key = `wakanda-oneoff-reminder:${userId}:${task.id}:${task.reminderAt}`;
+        if (readFlag(key)) continue;
+        if (await showLocalReminder(task.title, translate('WakanDa — напоминание о задаче'))) writeFlag(key);
+      }
+    }
+
+    const interval = window.setInterval(checkOneOff, 15000);
+    document.addEventListener('visibilitychange', checkOneOff);
+    window.addEventListener('focus', checkOneOff);
+    checkOneOff();
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', checkOneOff);
+      window.removeEventListener('focus', checkOneOff);
+    };
+  }, [oneOffTasks, userId]);
 
   const enable = useCallback(async () => {
     if (!('Notification' in window)) {

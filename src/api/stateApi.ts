@@ -1,4 +1,5 @@
 import type { AppState, ServerStateResponse, StatusHistoryItem } from '../types';
+import { DEFAULT_REMINDER_TIMES } from '../utils/schema';
 import { apiUrl, authHeaders, parseResponse } from './client';
 
 export interface SavedStateResponse {
@@ -76,12 +77,14 @@ export function isEmptyAppState(state: AppState | null | undefined): boolean {
   // «Пусто» — это действительно состояние по умолчанию, а не «нет задач».
   // Иначе аккаунт с одними настройками (тема/напоминание) считался бы пустым
   // и его настройки затирались бы при первом входе с другого устройства.
+  const reminderTimes = Array.isArray(state.reminderTimes) ? state.reminderTimes : [];
   return (
     !state.tasks.length &&
     !state.oneOffTasks.length &&
     Object.keys(state.notes).length === 0 &&
-    state.theme === 'system' &&
-    state.reminderTime === '20:00' &&
+    state.theme === 'dark' &&
+    reminderTimes.length === DEFAULT_REMINDER_TIMES.length &&
+    reminderTimes.every((time, index) => time === DEFAULT_REMINDER_TIMES[index]) &&
     !state.reminderEnabled &&
     !state.lastAutoBackupAt
   );

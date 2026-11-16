@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { pluralize } from '../utils/pluralize';
 import type { AppState, ConflictChoice, SyncConflict } from '../types';
 import { errorMessage } from '../utils/errors';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 import { useI18n } from '../i18n';
 
 function summarize(state: AppState): string[] {
@@ -39,13 +40,9 @@ export function SyncConflictDialog({ conflict, onChoose }: { conflict: SyncConfl
   const { t } = useI18n();
   const [busy, setBusy] = useState<ConflictChoice | null>(null);
   const [error, setError] = useState('');
-  const dialogRef = useRef<HTMLDivElement>(null);
-
-  // Клавиатурный фокус должен попадать в диалог. Escape намеренно не закрывает
-  // окно: выбор обязателен, иначе автосохранение так и останется заблокировано.
-  useEffect(() => {
-    dialogRef.current?.focus();
-  }, []);
+  // Escape намеренно не закрывает окно: выбор обязателен, иначе автосохранение
+  // так и останется заблокировано. Фон при этом всё равно не прокручивается.
+  const dialogRef = useDialogA11y({ closeOnEscape: false });
 
   async function choose(which: ConflictChoice) {
     setBusy(which);

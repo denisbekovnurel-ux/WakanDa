@@ -1,15 +1,21 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { Link, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Link } from './components/RouteLink';
+import { Topbar } from './components/Shell/Topbar';
+import { isPageKey, pages } from './components/Shell/navigation';
 import { useToday } from './hooks/TodayContext';
-import { usePrefersDark } from './hooks/usePrefersDark';
+import { useAmbience } from './hooks/useAmbience';
+import { useScrollReveal } from './hooks/useScrollReveal';
 import { useAppStore } from './store/AppStore';
 import { selectActiveHabits } from './store/selectors';
 import { useReminders } from './hooks/useReminders';
 import { pluralize } from './utils/pluralize';
-import { isPaused } from './utils/calc';
+import { isPaused, STATUS } from './utils/calc';
 import { TIMINGS } from './config/timings';
 import { BackupControls } from './components/BackupControls';
+import { TelegramPanel } from './components/TelegramPanel';
+import { RemindersPanel } from './components/RemindersPanel';
 import { StateHistory } from './components/StateHistory';
 import { SyncConflictDialog } from './components/SyncConflictDialog';
 import { PasswordChangeDialog } from './components/PasswordChangeDialog';
@@ -20,27 +26,14 @@ import { sendTestPush } from './api/pushApi';
 import { FeedbackViewport } from './components/Feedback';
 import { useFeedback } from './components/FeedbackContext';
 import { PageFallback } from './components/PageFallback';
-import { LanguageSwitcher } from './components/LanguageSwitcher';
-import { formatDate, useI18n } from './i18n';
+import { InstallBanner } from './components/Install/InstallBanner';
+import { InstallPanel } from './components/Install/InstallPanel';
+import { ProgressRing } from './components/ProgressRing/ProgressRing';
+import { AnimatedNumber } from './components/AnimatedNumber';
+import { useI18n } from './i18n';
 import quotes from './data/quotes.json';
 import { errorMessage } from './utils/errors';
 import './App.css';
-
-type PageKey = 'home' | 'daily' | 'oneoff' | 'stats' | 'admin';
-
-interface PageMeta {
-  label: string;
-  en: string;
-  ko: string;
-  eyebrow: string;
-  title: string;
-  description: string;
-  image: string;
-}
-
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-}
 
 // Ленивые разделы: попадают в бандл только когда пользователь их открыл.
 // Главная остаётся в основном чанке — это точка входа после входа в аккаунт.
@@ -48,24 +41,6 @@ const DailyPage = lazy(() => import('./pages/DailyPage'));
 const OneOffPage = lazy(() => import('./pages/OneOffPage'));
 const StatsPage = lazy(() => import('./components/Stats/StatsPage').then((module) => ({ default: module.StatsPage })));
 const AdminPanel = lazy(() => import('./components/Admin/AdminPanel').then((module) => ({ default: module.AdminPanel })));
-
-const pages: Record<PageKey, PageMeta> = {
-  home: { label: 'HOME 홈', en: 'HOME', ko: '홈', eyebrow: 'ПЛАН НА ДЕЙСТВИЕ', title: 'Точка старта', description: 'Порядок в делах. Холодная голова. Каждый день — шаг вперёд.', image: 'home-bg.jpg' },
-  daily: { label: 'DAILY 매일', en: 'DAILY', ko: '매일', eyebrow: 'РИТМ И ПОВТОРЕНИЕ', title: 'Ежедневный режим', description: 'Отмечай сделанное. Месяц покажет, насколько крепка твоя дисциплина.', image: 'daily-bg.jpg' },
-  oneoff: { label: 'ONE-SHOT 단발', en: 'ONE-SHOT', ko: '단발', eyebrow: 'ДЕЛО ДОЛЖНО БЫТЬ ЗАКРЫТО', title: 'Разовые задачи', description: 'Список конкретных дел. Выполнил — закрыл. История остаётся в архиве.', image: 'oneoff-bg.jpg' },
-  stats: { label: 'STATS 통계', en: 'STATS', ko: '통계', eyebrow: 'ЦИФРЫ НЕ ВРУТ', title: 'Статистика', description: 'Серия, ритм месяца и годовая карта — виден весь путь целиком.', image: 'stats-bg.jpg' },
-  admin: { label: 'ADMIN 관리자', en: 'ADMIN', ko: '관리자', eyebrow: 'УПРАВЛЕНИЕ ДОСТУПОМ', title: 'Админ-панель', description: 'Одобряй заявки, следи за активностью и управляй доступом пользователей.', image: 'admin-bg.jpg' },
-};
-
-const dateOptions: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long' };
-
-function isPageKey(value: string): value is PageKey {
-  return Object.hasOwn(pages, value);
-}
-
-function pathForPage(key: PageKey): string {
-  return key === 'home' ? '/' : `/${key}`;
-}
 
 function AdminOnly({ allowed }: { allowed: boolean }) {
   const { t } = useI18n();
@@ -76,22 +51,22 @@ function AdminOnly({ allowed }: { allowed: boolean }) {
 }
 
 function App() {
-  const { state, actions, conflict, resolveConflict } = useAppStore();
-  const { user, token, logout } = useAuth();
+  const { state, actions, conflict, resolveConflict, syncStatus } = useAppStore();
+  const { user, token } = useAuth();
   const { notify } = useFeedback();
   const { t, locale } = useI18n();
   const isAdmin = user?.role === 'admin';
-  const { oneOffTasks, theme, reminderTime, reminderEnabled } = state;
-  const prefersDark = usePrefersDark();
-  // «system» — следуем системной теме, иначе берём явный выбор пользователя.
-  const effectiveTheme = theme === 'system' ? (prefersDark ? 'dark' : 'light') : theme;
-  const nextTheme = theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system';
-  const themeNames = { system: t('как в системе'), light: t('светлая'), dark: t('тёмная') };
-  const themeIcons = { system: '◐', light: '☼', dark: '☾' };
-  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const { oneOffTasks, theme, reminderTimes, reminderEnabled } = state;
+  const nextTheme = theme === 'light' ? 'dark' : 'light';
+  const themeNames = { light: t('светлая'), dark: t('тёмная') };
+  const themeIcons = { light: '☼', dark: '☾' };
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [quoteIndex, setQuoteIndex] = useState(() => Math.floor(Math.random() * quotes.length));
+  const [isBooting, setIsBooting] = useState(true);
+  const routeSettled = useRef(false);
   const { today, todayKey } = useToday();
+  useAmbience();
+  useScrollReveal();
   const location = useLocation();
   const pageKey = location.pathname === '/' ? 'home' : location.pathname.replace(/^\//, '');
   const page = isPageKey(pageKey) ? pageKey : null;
@@ -108,17 +83,16 @@ function App() {
   }).length);
   const badges = useMemo(() => getBadges(state), [state]);
   const unlockedCount = badges.filter((badge) => badge.unlocked).length;
+  const progressPercent = activeTasks.length ? Math.round((completedToday / activeTasks.length) * 100) : 0;
+  const syncLabels: Record<string, string> = {
+    connecting: t('Подключение…'),
+    saving: t('Сохраняем…'),
+    saved: t('Сохранено'),
+    offline: t('Офлайн-кэш'),
+  };
+  const syncLabel = syncStatus ? syncLabels[syncStatus] ?? '' : '';
 
-  const { enable: requestReminderPermission } = useReminders({ enabled: reminderEnabled, reminderTime, pendingHabits, todayKey });
-
-  useEffect(() => {
-    function captureInstallPrompt(event: Event) {
-      event.preventDefault();
-      setInstallPrompt(event as BeforeInstallPromptEvent);
-    }
-    window.addEventListener('beforeinstallprompt', captureInstallPrompt);
-    return () => window.removeEventListener('beforeinstallprompt', captureInstallPrompt);
-  }, []);
+  const { enable: requestReminderPermission } = useReminders({ enabled: reminderEnabled, reminderTimes, oneOffTasks, pendingHabits, todayKey });
 
   // Заголовок и описание вкладки тоже часть интерфейса.
   useEffect(() => {
@@ -136,12 +110,35 @@ function App() {
     }
   }, [locale, t]);
 
-  // При переходе между страницами остаёмся наверху — иначе длинная главная
-  // «передаёт» свою прокрутку короткому разделу.
+  // Цвет статус-бара iOS/Android и фона PWA следует за выбранной темой.
   useEffect(() => {
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute('content', theme === 'light' ? '#fcf8fc' : '#09080c');
+  }, [theme]);
+
+  // При переходе между страницами остаёмся наверху — иначе длинная главная
+  // «передаёт» свою прокрутку короткому разделу. useLayoutEffect + behavior:
+  // 'instant' гарантируют, что прокрутка сбросится до снятия снимка
+  // view-transition и страница не «прыгнет» вверх уже после начала анимации.
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    // Дублируем напрямую: часть окружений (и jsdom в тестах) не реализует
+    // scrollTo, но обязана сбрасывать позицию документа.
     document.documentElement.scrollTop = 0;
     document.body.scrollTop = 0;
+    // Волна появления карточек нужна только при первом открытии приложения.
+    // При смене раздела её отключаем до снятия снимка view-transition.
+    if (routeSettled.current) setIsBooting(false);
+    else routeSettled.current = true;
   }, [location.pathname]);
+
+  // Страховка: даже если пользователь остался на первом экране, снимаем
+  // boot-класс после завершения вступительных анимаций.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setIsBooting(false), 1400);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -199,50 +196,84 @@ function App() {
     }
   }
 
-  async function installApp() {
-    if (!installPrompt) return;
-    await installPrompt.prompt();
-    setInstallPrompt(null);
-  }
-
   return (
-    <div className={`app-shell ${effectiveTheme === 'light' ? 'theme-light' : ''}`}>
-      <header className="topbar">
-        <Link className="brand" to="/" aria-label={t('WakanDa 와칸다 — на главную')}><span className="brand-mark" aria-hidden="true">W</span><span>WakanDa<span className="brand-period">.</span></span><span className="brand-ko">와칸다</span></Link>
-        <nav className="main-nav" aria-label={t('Основная навигация')}>
-          {(Object.entries(pages) as Array<[PageKey, PageMeta]>).filter(([key]) => key !== 'admin' || isAdmin).map(([key, item]) => <NavLink key={key} to={pathForPage(key)} end={key === 'home'} className={({ isActive }) => (isActive ? 'is-active' : '')}>{item.label}</NavLink>)}
-        </nav>
-        {page === 'home' && <span className="pending-reminder" aria-live="polite">{pendingHabits ? t('ОСТАЛОСЬ ОТМЕТИТЬ {count}', { count: pendingHabits }) : t('ВСЁ ОТМЕЧЕНО')}</span>}
-        <div className="user-menu">
-          <span className="user-chip" title={user?.username}>{user?.username}<span className="user-chip-role">{isAdmin ? 'ADMIN' : 'USER'}</span></span>
-          <button className="logout-button" type="button" onClick={() => setShowPasswordDialog(true)} title={t('Пароль и сессии')}>{t('Пароль')}</button>
-          <button className="logout-button" type="button" onClick={logout} title={t('Выйти из аккаунта')}>{t('Выйти')}</button>
-        </div>
-        <LanguageSwitcher />
-        <button className="theme-toggle" type="button" onClick={() => actions.setTheme(nextTheme)} aria-label={t('Тема: {current}. Переключить на «{next}»', { current: themeNames[theme], next: themeNames[nextTheme] })} title={t('Тема: {current}', { current: themeNames[theme] })}>{themeIcons[theme]}</button>
-        <time className="today-date" dateTime={todayKey}>{formatDate(today, dateOptions)}</time>
-      </header>
+    <div className={`app-shell ${theme === 'light' ? 'theme-light' : ''} ${isBooting ? 'is-booting' : ''}`}>
+      <div className="scroll-progress" aria-hidden="true" />
+      <div className="cursor-glow" aria-hidden="true" />
+      <div className="cosmos" aria-hidden="true" />
+      <div className="tech-frame" aria-hidden="true" />
+      <a className="skip-link" href="#main-content">{t('Перейти к содержимому')}</a>
+      <Topbar
+        page={page}
+        pendingHabits={pendingHabits}
+        syncLabel={syncLabel}
+        syncStatus={syncStatus ?? ''}
+        theme={theme}
+        nextTheme={nextTheme}
+        themeNames={themeNames}
+        themeIcons={themeIcons}
+        today={today}
+        todayKey={todayKey}
+        onToggleTheme={() => actions.setTheme(nextTheme)}
+        onOpenPassword={() => setShowPasswordDialog(true)}
+      />
 
-      <main className="page-content">
+      <main className="page-content" id="main-content" tabIndex={-1}>
         <section className={`page-hero page-hero--${page ?? 'home'}`} style={{ '--page-photo': `url('/images/${currentPage.image}')` } as CSSProperties} aria-labelledby="page-title">
           <div className="page-hero-copy"><p className="eyebrow">{t(currentPage.eyebrow)}</p><h1 id="page-title">{t(currentPage.title)}</h1><p className="page-hero-description">{t(currentPage.description)}</p></div>
-          <div className="hero-watermark" aria-hidden="true">{currentPage.ko}</div>
+          <aside className="hero-aside" aria-label={t('Прогресс дня')}>
+            <ProgressRing percent={progressPercent} size={86} ariaLabel={t('Выполнено сегодня')} />
+            <span className="hero-aside-label">{t('ПРОГРЕСС ДНЯ')}</span>
+            <span className="hero-aside-value">{t('{done} из {total}', { done: completedToday, total: activeTasks.length })}</span>
+          </aside>
+          <div className="hero-watermark" aria-hidden="true">{currentPage.index}</div>
         </section>
 
         <Suspense fallback={<PageFallback />}>
           <Routes>
             <Route path="/" element={(
               <>
-                <section className="stats-grid" aria-label={t('Сводка')}>
-                  <article className="stat-card"><span className="stat-icon" aria-hidden="true">✦</span><div><p className="stat-label">{t('Выполнено сегодня')}</p><p className="stat-value">{completedToday}<span> / {activeTasks.length}</span></p><p className="stat-foot">{pluralize(completedToday, 'привычка выполнена', 'привычки выполнены', 'привычек выполнено')}</p></div></article>
-                  <article className="stat-card stat-card--red"><span className="stat-icon" aria-hidden="true">⚔</span><div><p className="stat-label">{t('Разовые задачи')}</p><p className="stat-value">{oneOffTasks.filter((task) => !task.done).length}<span> {t('в работе')}</span></p><p className="stat-foot">{t('{count} закрыто и в архиве', { count: oneOffTasks.filter((task) => task.done).length })}</p></div></article>
-                  <article className="stat-card stat-card--gold"><span className="stat-icon" aria-hidden="true">🏅</span><div><p className="stat-label">{t('Награды')}</p><p className="stat-value">{unlockedCount}<span> / {badges.length}</span></p><p className="stat-foot"><Link className="text-link" to="/stats">{t('смотреть достижения')}</Link></p></div></article>
+                <section className="stats-grid" data-reveal aria-label={t('Сводка')}>
+                  <article className="stat-card"><span className="stat-icon" aria-hidden="true">✦</span><div><p className="stat-label">{t('Выполнено сегодня')}</p><p className="stat-value"><AnimatedNumber value={completedToday} /><span> / {activeTasks.length}</span></p><p className="stat-foot">{pluralize(completedToday, 'привычка выполнена', 'привычки выполнены', 'привычек выполнено')}</p></div></article>
+                  <article className="stat-card stat-card--red"><span className="stat-icon" aria-hidden="true">⚔</span><div><p className="stat-label">{t('Разовые задачи')}</p><p className="stat-value"><AnimatedNumber value={oneOffTasks.filter((task) => !task.done).length} /><span> {t('в работе')}</span></p><p className="stat-foot">{t('{count} закрыто и в архиве', { count: oneOffTasks.filter((task) => task.done).length })}</p></div></article>
+                  <article className="stat-card stat-card--gold"><span className="stat-icon" aria-hidden="true">🏅</span><div><p className="stat-label">{t('Награды')}</p><p className="stat-value"><AnimatedNumber value={unlockedCount} /><span> / {badges.length}</span></p><p className="stat-foot"><Link className="text-link" to="/stats">{t('смотреть достижения')}</Link></p></div></article>
                 </section>
-                <div className="home-grid">
-                  <section className="section-card home-preview"><div className="section-heading"><div><p className="eyebrow">{t('ДЕНЬ ЗА ДНЁМ')}</p><h2>{t('Твои привычки')}</h2></div><Link className="text-link" to="/daily">{t('Открыть месяц')} <span aria-hidden="true">↗</span></Link></div><p className="section-description">{activeTasks.length ? t('В списке {count} {unit}. Продолжай держать ритм.', { count: activeTasks.length, unit: pluralize(activeTasks.length, 'привычка', 'привычки', 'привычек') }) : t('Добавь привычку и начни собирать свою серию.')}</p><ul className="home-habit-list">{activeTasks.slice(0, 4).map((task) => <li key={task.id}><span className={`home-habit-mark ${task.history?.[todayKey] === 'done' ? 'is-done' : ''}`}>{task.history?.[todayKey] === 'done' ? '✓' : '·'}</span><span>{task.title}</span></li>)}</ul>{activeTasks.length > 4 && <Link className="text-link home-more" to="/daily">{t('И ещё {count} привычек', { count: activeTasks.length - 4 })}</Link>}</section>
+                <div className="home-grid" data-reveal>
+                  <section className="section-card home-preview">
+                    <div className="section-heading"><div><p className="eyebrow">{t('ДЕНЬ ЗА ДНЁМ')}</p><h2>{t('Твои привычки')}</h2></div><Link className="text-link" to="/daily">{t('Открыть месяц')} <span aria-hidden="true">↗</span></Link></div>
+                    <p className="section-description">{activeTasks.length ? t('В списке {count} {unit}. Продолжай держать ритм.', { count: activeTasks.length, unit: pluralize(activeTasks.length, 'привычка', 'привычки', 'привычек') }) : t('Добавь привычку и начни собирать свою серию.')}</p>
+                    {activeTasks.length === 0 ? (
+                      <div className="home-empty">
+                        <span aria-hidden="true">✦</span>
+                        <p>{t('Здесь появится твой первый шаг.')}</p>
+                        <Link className="text-link" to="/daily">{t('Добавить привычку')} <span aria-hidden="true">→</span></Link>
+                      </div>
+                    ) : (
+                      <ul className="home-habit-list">
+                        {activeTasks.slice(0, 4).map((task) => {
+                          const done = task.history?.[todayKey] === STATUS.DONE;
+                          return (
+                            <li key={task.id} className={done ? 'is-done' : ''}>
+                              <button
+                                type="button"
+                                className={`home-habit-toggle ${done ? 'is-done' : ''}`}
+                                aria-pressed={done}
+                                aria-label={done ? t('Снять отметку с «{title}»', { title: task.title }) : t('Отметить «{title}» выполненной', { title: task.title })}
+                                onClick={() => actions.setHabitStatus?.(task.id, todayKey, done ? STATUS.EMPTY : STATUS.DONE)}
+                              ><span aria-hidden="true">✓</span></button>
+                              <span className="home-habit-title">{task.title}</span>
+                              <span className="home-habit-streak">{done ? t('сделано') : t('сегодня')}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                    {activeTasks.length > 4 && <Link className="text-link home-more" to="/daily">{t('И ещё {count} привычек', { count: activeTasks.length - 4 })}</Link>}
+                  </section>
                   <section className="section-card home-focus"><p className="eyebrow">{t('НЕ ЖДИ ИДЕАЛЬНОГО МОМЕНТА')}</p><h2>{t('Выбери дело.')}<br /><span>{t('Доведи до конца.')}</span></h2><p className="section-description">{t('Характер крепнет не от обещаний, а от выполненных решений.')}</p><Link className="button button--red" to="/oneoff">{t('К списку задач')} <span aria-hidden="true">→</span></Link></section>
                 </div>
-                <section className="section-card settings-panel"><div><p className="eyebrow">{t('СОХРАНИ СВОЙ ПРОГРЕСС')}</p><h2>{t('Инструменты и напоминания')}</h2><p className="section-description">{t('Напоминание приходит в выбранное время. С включёнными push-уведомлениями сервер пришлёт его, даже когда вкладка закрыта (нужно установить приложение и разрешить уведомления).')}</p></div><div className="reminder-controls"><label>{t('Время напоминания')}<input type="time" value={reminderTime} onChange={(event) => actions.setReminderTime(event.target.value)} /></label><button className="button button--red" type="button" onClick={toggleReminders}>{reminderEnabled ? t('Отключить напоминания') : t('Включить напоминание')}</button>{reminderEnabled && <button className="button button--light" type="button" onClick={sendTestNotification}>{t('Проверить уведомление')}</button>}</div><BackupControls />{installPrompt && <button className="button button--light install-button" type="button" onClick={installApp}>{t('Установить WakanDa')}</button>}<StateHistory /></section>
+                <section className="section-card settings-panel" data-reveal><div><p className="eyebrow">{t('СОХРАНИ СВОЙ ПРОГРЕСС')}</p><h2>{t('Инструменты и напоминания')}</h2><p className="section-description">{t('Напоминания приходят до трёх раз в день — выбери удобное время. С включёнными push-уведомлениями сервер пришлёт их, даже когда вкладка закрыта.')}</p></div><div className="reminder-controls">{reminderTimes.map((time, index) => <label key={index}>{t('Время {n}', { n: index + 1 })}<input type="time" value={time} onChange={(event) => actions.setReminderTime(index, event.target.value)} /></label>)}<button className="button button--red" type="button" onClick={toggleReminders}>{reminderEnabled ? t('Отключить напоминания') : t('Включить напоминание')}</button>{reminderEnabled && <button className="button button--light" type="button" onClick={sendTestNotification}>{t('Проверить уведомление')}</button>}</div><TelegramPanel /><RemindersPanel /><BackupControls /><StateHistory /></section>
+                <section className="section-card install-card" data-reveal><InstallPanel /></section>
               </>
             )} />
             <Route path="/daily" element={<DailyPage />} />
@@ -253,11 +284,12 @@ function App() {
           </Routes>
         </Suspense>
 
-        <aside key={quoteIndex} className="quote-card" aria-label={t('Мотивационная цитата')}><span className="quote-mark" aria-hidden="true">“</span><p>{t(quotes[quoteIndex].text)}</p><span className="quote-caption">{t('ДИСЦИПЛИНА')} · {String(quoteIndex + 1).padStart(2, '0')} / {quotes.length}</span></aside>
-        <footer className="site-footer"><span>{t('Выдержка создаёт результат.')}</span><span>WAKANDA 와칸다 <span aria-hidden="true">✳</span></span></footer>
+        <aside key={quoteIndex} className="quote-card" data-reveal aria-label={t('Мотивационная цитата')}><span className="quote-mark" aria-hidden="true">“</span><p>{t(quotes[quoteIndex].text)}</p><span className="quote-caption">{t('ДИСЦИПЛИНА')} · {String(quoteIndex + 1).padStart(2, '0')} / {quotes.length}</span></aside>
+        <footer className="site-footer" data-reveal><span>{t('Выдержка создаёт результат.')}</span><span>WAKANDA <span aria-hidden="true">✳</span></span></footer>
       </main>
       {conflict && <SyncConflictDialog conflict={conflict} onChoose={resolveConflict} />}
       {showPasswordDialog && <PasswordChangeDialog onClose={() => setShowPasswordDialog(false)} />}
+      <InstallBanner />
       <FeedbackViewport />
     </div>
   );

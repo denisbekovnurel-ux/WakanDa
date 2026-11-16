@@ -31,6 +31,7 @@ beforeEach(() => {
       toggleOneOff: vi.fn(),
       deleteOneOff: vi.fn(),
       renameOneOff: vi.fn(),
+      setOneOffReminder: vi.fn(),
       moveOneOff: vi.fn(),
     },
   };
@@ -66,6 +67,43 @@ describe('OneOffList', () => {
 
     expect(mocks.store.actions.addOneOff).toHaveBeenCalledWith('Позвонить в банк', { deadline: '', priority: 'normal' }, '2026-10-26');
     expect(screen.getByLabelText('Название разовой задачи').value).toBe('');
+  });
+
+  it('добавляет задачу с напоминанием на будущее время', () => {
+    render(<OneOffList />);
+
+    fireEvent.change(screen.getByLabelText('Название разовой задачи'), { target: { value: 'Позвонить в банк' } });
+    fireEvent.change(screen.getByLabelText('Время напоминания'), { target: { value: '2030-01-02T09:30' } });
+    fireEvent.click(screen.getByText('Добавить задачу'));
+
+    const expected = new Date('2030-01-02T09:30').toISOString();
+    expect(mocks.store.actions.addOneOff).toHaveBeenCalledWith(
+      'Позвонить в банк',
+      { deadline: '', priority: 'normal', reminderAt: expected },
+      '2026-10-26',
+    );
+  });
+
+  it('не принимает напоминание в прошлом', () => {
+    render(<OneOffList />);
+
+    fireEvent.change(screen.getByLabelText('Название разовой задачи'), { target: { value: 'Позвонить в банк' } });
+    fireEvent.change(screen.getByLabelText('Время напоминания'), { target: { value: '2020-01-02T09:30' } });
+    fireEvent.click(screen.getByText('Добавить задачу'));
+
+    expect(mocks.store.actions.addOneOff).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toContain('уже прошло');
+  });
+
+  it('ставит напоминание прямо в строке задачи', () => {
+    render(<OneOffList />);
+
+    fireEvent.click(screen.getByLabelText('Напомнить о задаче «Купить лампу»'));
+    fireEvent.change(screen.getByLabelText('Новое время напоминания'), { target: { value: '2030-01-02T09:30' } });
+    fireEvent.click(screen.getByText('Сохранить'));
+
+    const expected = new Date('2030-01-02T09:30').toISOString();
+    expect(mocks.store.actions.setOneOffReminder).toHaveBeenCalledWith('a2', expected);
   });
 
   it('фильтрует просроченные и приоритетные задачи', () => {

@@ -35,7 +35,7 @@ export function PendingScreen({ blocked = false }: { blocked?: boolean }) {
           {t('Выйти')}
         </button>
       </div>
-      <p className="auth-footer">WAKANDA 와칸다 <span aria-hidden="true">✳</span></p>
+      <p className="auth-footer">WAKANDA <span aria-hidden="true">✳</span></p>
     </div>
   );
 }

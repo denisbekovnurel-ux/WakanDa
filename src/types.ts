@@ -3,7 +3,7 @@
 // Компонентные пропсы живут рядом с компонентами.
 
 export type HabitStatus = 'done' | 'failed' | 'empty';
-export type Theme = 'light' | 'dark' | 'system';
+export type Theme = 'light' | 'dark';
 export type OneOffPriority = 'high' | 'normal' | 'low';
 export type SyncStatus = 'connecting' | 'saving' | 'saved' | 'offline';
 export type UserRole = 'admin' | 'user';
@@ -31,6 +31,8 @@ export interface OneOffTask {
   createdAt?: string;
   deadline: string;
   priority: OneOffPriority;
+  /** ISO-время, когда нужно напомнить о задаче. Пусто — напоминания нет. */
+  reminderAt?: string;
 }
 
 export interface AppState {
@@ -39,7 +41,8 @@ export interface AppState {
   oneOffTasks: OneOffTask[];
   notes: Record<string, string>;
   theme: Theme;
-  reminderTime: string;
+  /** До трёх ежедневных напоминаний о привычках, локальное время «ЧЧ:ММ». */
+  reminderTimes: string[];
   reminderEnabled: boolean;
   lastAutoBackupAt: number;
 }
@@ -163,6 +166,8 @@ export interface TodayContextValue {
 export interface OneOffOptions {
   deadline: string;
   priority: OneOffPriority;
+  /** ISO-время напоминания о задаче, если пользователь его выбрал. */
+  reminderAt?: string;
 }
 
 /** Действия над состоянием, которые доступны компонентам. */
@@ -181,10 +186,11 @@ export interface AppActions {
   toggleOneOff: (id: string) => void;
   deleteOneOff: (id: string) => void;
   renameOneOff: (id: string, title: string) => void;
+  setOneOffReminder: (id: string, reminderAt: string) => void;
   moveOneOff: (id: string, direction: -1 | 1) => void;
   setNote: (dateKey: string, text: string) => void;
   setTheme: (value: Theme) => void;
-  setReminderTime: (value: string) => void;
+  setReminderTime: (index: number, value: string) => void;
   setReminderEnabled: (value: boolean) => void;
   markAutoBackup: (value: number) => void;
   replaceState: (next: unknown) => void;
