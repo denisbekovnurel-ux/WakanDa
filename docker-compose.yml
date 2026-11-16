@@ -6,12 +6,17 @@
 #   2. docker compose up -d --build
 #   3. Откройте http://<сервер>:3001  (для Web Push нужен HTTPS — см. README).
 #
+# Готовый образ из GitHub (собирается в Actions, локальный Docker не нужен):
+#   WAKANDA_IMAGE=ghcr.io/<owner>/<repo>:latest
+#   docker compose pull && docker compose up -d
+#
 # Данные и ключи Web Push лежат в томе wakanda-data и переживают пересборку.
 
 services:
   wakanda:
     build: .
-    image: wakanda:latest
+    # По умолчанию локальная сборка. Для GHCR задайте WAKANDA_IMAGE в .env.
+    image: ${WAKANDA_IMAGE:-wakanda:latest}
     restart: unless-stopped
     ports:
       - "3001:3001"
@@ -25,6 +30,13 @@ services:
       WAKANDA_VAPID_PUBLIC: ${WAKANDA_VAPID_PUBLIC:-}
       WAKANDA_VAPID_PRIVATE: ${WAKANDA_VAPID_PRIVATE:-}
       WAKANDA_VAPID_SUBJECT: ${WAKANDA_VAPID_SUBJECT:-mailto:admin@wakanda.local}
+      # По желанию: уведомления в Telegram. Токен от @BotFather; webhook URL —
+      # публичный HTTPS-адрес (не адрес контейнера), секрет — любая длинная
+      # случайная строка. Без них бот работает через long polling.
+      WAKANDA_TELEGRAM_BOT_TOKEN: ${WAKANDA_TELEGRAM_BOT_TOKEN:-}
+      WAKANDA_TELEGRAM_BOT_USERNAME: ${WAKANDA_TELEGRAM_BOT_USERNAME:-}
+      WAKANDA_TELEGRAM_WEBHOOK_URL: ${WAKANDA_TELEGRAM_WEBHOOK_URL:-}
+      WAKANDA_TELEGRAM_WEBHOOK_SECRET: ${WAKANDA_TELEGRAM_WEBHOOK_SECRET:-}
       # Если перед контейнером стоит reverse proxy — укажите число хопов
       # (обычно 1) или подсети, иначе rate limit увидит IP прокси.
       WAKANDA_TRUST_PROXY: ${WAKANDA_TRUST_PROXY:-}
