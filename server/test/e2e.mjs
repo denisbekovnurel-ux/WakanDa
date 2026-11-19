@@ -94,6 +94,19 @@ async function main() {
   await waitForServer();
   check('health endpoint responds ok', true);
 
+  const docs = await fetch(`${API}/docs-json`).then((r) => r.json()).catch(() => null);
+  check(
+    'OpenAPI document generated from routes',
+    docs?.info?.title === 'WakanDa API' && !!docs.paths?.['/api/health'] && !!docs.paths?.['/api/auth/login'],
+    Object.keys(docs?.paths ?? {}).slice(0, 5).join(','),
+  );
+  const docsPage = await fetch(`${API}/docs`);
+  check(
+    'Swagger UI available',
+    docsPage.status === 200 && (docsPage.headers.get('content-security-policy') ?? '').includes("'unsafe-inline'"),
+    String(docsPage.status),
+  );
+
   const health = await req('/health');
   check(
     'health reports live scheduler',

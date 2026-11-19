@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { buildHelmetOptions, parseCorsOrigins, parseTrustProxy } from './security/security.config';
 import { logger } from './observability/logger';
@@ -16,6 +17,7 @@ import { AllExceptionsFilter } from './observability/exception.filter';
 // Состояние пользователя — один JSON на всю историю, поэтому стандартных 100 КБ
 // из express недостаточно: автосохранение тихо падало бы с 413. Лимит настраиваемый.
 const BODY_LIMIT = process.env.WAKANDA_BODY_LIMIT || '2mb';
+const API_PREFIX = 'api';
 
 const APP_DIR = dirname(fileURLToPath(import.meta.url));
 // Сюда Vite собирает фронтенд: server/src → project/dist.
@@ -52,6 +54,43 @@ function serveFrontend(app: NestExpressApplication) {
   // реальные ассеты из dist через useStaticAssets).
   express.get(/^(?!\/api\/?).*/, (_request, response) => response.sendFile(indexFile));
   logger.info({ distDir: DIST_DIR }, 'serving built frontend');
+}
+
+/**
+ * OpenAPI живёт в коде: список эндпоинтов нельзя забыть обновить вручную.
+ * Отключается через WAKANDA_SWAGGER=0.
+ */
+function setupSwagger(app: NestExpressApplication) {
+  if (process.env.WAKANDA_SWAGGER === '0') return;
+  // Swagger UI инициализируется inline-скриптом, поэтому для /api/docs CSP
+  // мягче, чем у приложения. Остальные ответы остаются под строгой CSP.
+  app.use(`/${API_PREFIX}/docs`, (_request: unknown, response: { setHeader: (name: string, value: string) => void }, next: () => void) => {
+    response.setHeader(
+      'Content-Security-Policy',
+      [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline'",
+        "script-src-attr 'unsafe-inline'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data:",
+        "font-src 'self' data:",
+        "connect-src 'self'",
+        "object-src 'none'",
+        "frame-ancestors 'none'",
+        "base-uri 'self'",
+      ].join('; '),
+    );
+    next();
+  });
+  const config = new DocumentBuilder()
+    .setTitle('WakanDa API')
+    .setDescription('Привычки, разовые задачи, напоминания, Telegram и Web Push.')
+    .setVersion('1.0')
+    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'opaque' }, 'bearer')
+    .build();
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup(`${API_PREFIX}/docs`, app, document, { customSiteTitle: 'WakanDa API' });
+  logger.info({ url: `/${API_PREFIX}/docs` }, 'api docs enabled');
 }
 
 async function bootstrap() {
@@ -103,8 +142,9 @@ async function bootstrap() {
     },
     'http security configured',
   );
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix(API_PREFIX);
   app.enableShutdownHooks();
+  setupSwagger(app);
   serveFrontend(app);
   const port = Number(process.env.PORT) || 3001;
   await app.listen(port);

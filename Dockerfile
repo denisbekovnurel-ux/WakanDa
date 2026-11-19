@@ -7,6 +7,8 @@ COPY package.json package-lock.json ./
 COPY server/package.json server/package-lock.json ./server/
 RUN npm ci && npm ci --prefix server
 COPY . .
+ARG VITE_RELEASE=dev
+ENV VITE_RELEASE=${VITE_RELEASE}
 RUN npm run build
 
 # 2) Запуск: только то, что нужно в рантайме.

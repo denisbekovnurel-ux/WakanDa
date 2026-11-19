@@ -154,9 +154,27 @@ src/pwa/PwaInstallProvider   → beforeinstallprompt / appinstalled, один н
 - Сервер отдаёт манифест как `application/manifest+json`, а `/sw.js` — с
   `no-store` и `Service-Worker-Allowed: /`. Это проверяет `src/pwa/pwa.test.js`.
 
+## Ограничения и roadmap
+
+Текущие trade-offs осознанны и не скрываются:
+
+- **Один администратор.** Нет self-service восстановления пароля: сброс делает
+  админ. Мульти-админ и roles — в планах.
+- **SQLite, один процесс.** In-process таймеры, Web Push и Telegram не
+  масштабируются горизонтально; нет HA. Для больших нагрузок нужен внешний
+  планировщик и общая БД, что ломает текущую простоту.
+- **Chrome на iOS не ставит PWA** — только Safari → «На экран „Домой“».
+- **Bearer-токен в `localStorage`.** Просто для SPA и офлайн-старта, но требует
+  строгой CSP; подробности — в [docs/security.md](security.md#хранение-токена).
+
+Roadmap: мульти-админ, восстановление пароля, экспорт/импорт через UI,
+опциональный внешний планировщик и метрики.
+
 ## CI и поставка
 
-`.github/workflows/ci.yml` — единственный CI-конвейер:
+Подробные инструкции по деплою, переменным и бэкапам — в
+[docs/deployment.md](deployment.md). `.github/workflows/ci.yml` — единственный
+CI-конвейер:
 
 ```text
 push / pull_request
@@ -199,3 +217,5 @@ push в main (после build)
     в той же сессии.
 11. Меняя манифест, иконки или service worker, обновляй `src/pwa/pwa.test.js`
     и проверяй Chrome DevTools → Application → Manifest / Service Workers.
+12. README остаётся коротким: детали выносятся в `docs/*`. Список эндпоинтов
+    не ведётся вручную — источник правды OpenAPI из `@nestjs/swagger`.

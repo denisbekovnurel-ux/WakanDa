@@ -40,6 +40,9 @@ services:
       # Если перед контейнером стоит reverse proxy — укажите число хопов
       # (обычно 1) или подсети, иначе rate limit увидит IP прокси.
       WAKANDA_TRUST_PROXY: ${WAKANDA_TRUST_PROXY:-}
+      # Документация API доступна на /api/docs; 0 — выключить.
+      WAKANDA_SWAGGER: ${WAKANDA_SWAGGER:-}
+      WAKANDA_RELEASE: ${WAKANDA_RELEASE:-}
     volumes:
       - wakanda-data:/data
 
