@@ -17,8 +17,8 @@ SQLite-база и ключи VAPID удаляются при каждом ре�
 2. Dashboard → **New** → **Blueprint**.
 3. Выбери репозиторий `denisbekovnurel-ux/WakanDa`, ветку `main`, **Apply**.
 4. Когда Render спросит `WAKANDA_ADMIN_PASS`, введи длинный пароль администратора.
-5. Дождись деплоя (первый раз ~5–10 минут). Открой выданный адрес вида
-   `https://wakanda-xxxx.onrender.com`.
+5. Дождись деплоя (первый раз ~5–10 минут). Текущий адрес:
+   https://wakanda-xgmb.onrender.com
 6. В GitHub → репозиторий → Settings → Secrets and variables → Actions → Variables
    добавь переменную `RENDER_URL` со значением `https://wakanda-xxxx.onrender.com`.
    Это включит keep-alive каждые 5 минут: free-инстанс не будет засыпать.
