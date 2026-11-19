@@ -53,6 +53,7 @@ npm run dev
 
 - [Деплой, переменные, HTTPS, PWA и бэкапы](docs/deployment.md)
 - [Публичный деплой на Oracle Always Free + HTTPS](docs/oracle.md)
+- [Render free без карты (только для демо)](docs/render.md)
 - [Telegram-бот и формат напоминаний](docs/telegram.md)
 - [API и Swagger](docs/api.md)
 - [Безопасность и хранение токена](docs/security.md)

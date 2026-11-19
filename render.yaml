@@ -1,0 +1,25 @@
+# Free Render deployment (no credit card).
+# Render builds the Dockerfile from this public repo, so GHCR visibility is irrelevant here.
+# WARNING: Free web services have an ephemeral filesystem and spin down after 15 min.
+# SQLite data is LOST on restart/redeploy. Use this only for a public preview.
+# For real data use docs/oracle.md instead.
+services:
+  - type: web
+    name: wakanda
+    runtime: docker
+    plan: free
+    region: frankfurt
+    healthCheckPath: /api/health
+    envVars:
+      - key: WAKANDA_ADMIN_PASS
+        sync: false # Render prompts for this during Blueprint creation
+      - key: WAKANDA_DATA_DIR
+        value: /data
+      - key: WAKANDA_TRUST_PROXY
+        value: "1"
+      - key: WAKANDA_VAPID_SUBJECT
+        value: mailto:admin@wakanda.onrender.com
+      - key: WAKANDA_SWAGGER
+        value: "1"
+      - key: NODE_ENV
+        value: production
