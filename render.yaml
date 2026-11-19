@@ -3,6 +3,7 @@
 # WARNING: Free web services have an ephemeral filesystem and spin down after 15 min.
 # SQLite data is LOST on restart/redeploy. Use this only for a public preview.
 # For real data use docs/oracle.md instead.
+# Dockerfile copies server/tsconfig.json so tsx keeps experimentalDecorators.
 services:
   - type: web
     name: wakanda

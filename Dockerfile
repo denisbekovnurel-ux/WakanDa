@@ -20,6 +20,8 @@ ENV NODE_ENV=production \
 # Зависимости сервера (включая tsx и better-sqlite3 с нативным модулем).
 COPY --from=build /app/server/node_modules ./node_modules
 COPY --from=build /app/server/package.json /app/server/package-lock.json ./
+# tsx/esbuild читает server/tsconfig.json: без experimentalDecorators падают Nest-декораторы.
+COPY --from=build /app/server/tsconfig.json ./tsconfig.json
 COPY --from=build /app/server/src ./src
 # Собранный фронтенд и корневой package.json (для npm run build-скриптов не нужен).
 COPY --from=build /app/dist /app/dist
