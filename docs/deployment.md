@@ -50,8 +50,11 @@ docker compose pull
 docker compose up -d
 ```
 
-Пакет приватный. Сделайте его публичным (GitHub → Packages → Package settings)
-или один раз войдите на сервере:
+Пакет `ghcr.io/denisbekovnurel-ux/wakanda` публичный, логин не нужен.
+Готовый рецепт с HTTPS и бэкапами для Oracle Always Free — в [docs/oracle.md](oracle.md).
+
+Если пакет всё ещё приватный (видимость меняется вручную в GitHub → Packages →
+Package settings → Change visibility → Public), один раз войдите на сервере:
 
 ```bash
 echo "<PAT>" | docker login ghcr.io -u denisbekovnurel-ux --password-stdin
